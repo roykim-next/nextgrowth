@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    const runBtn = document.querySelector('.btn-primary');
+    const runBtn = document.getElementById('btn-run-projection');
 
     // Set default dates: Today -> Today + 180 days
     const startDateInput = document.getElementById('start-date');
@@ -118,16 +118,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial Simulation
-    generateData();
+    if (runBtn) {
+        generateData();
 
-    runBtn.addEventListener('click', () => {
-        // Add a loading effect or just regenerate
-        runBtn.textContent = 'Calculating...';
-        setTimeout(() => {
-            generateData();
-            runBtn.textContent = 'Run Projection';
-        }, 500);
-    });
+        runBtn.addEventListener('click', () => {
+            // Add a loading effect or just regenerate
+            runBtn.textContent = 'Calculating...';
+            setTimeout(() => {
+                generateData();
+                runBtn.textContent = 'Run Projection';
+            }, 500);
+        });
+    }
 
     const exportBtn = document.getElementById('btn-export');
     if (exportBtn) {
@@ -218,7 +220,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Strip commas for calculation
         let currentDAU = currentDauInput ? parseFloat(currentDauInput.value.replace(/,/g, '')) : 50000;
 
-        // Growth parameters
         // Growth parameters
         const lt180Element = document.getElementById('lt180');
         const dnuElement = document.getElementById('dnu');

@@ -25,7 +25,7 @@ def init_db():
     # Create Admin Account
     admin_email = "henry@nextsecurities.com"
     # For demo, default password is 'admin123'
-    admin_pass = generate_password_hash("admin123")
+    admin_pass = generate_password_hash("admin123", method='pbkdf2:sha256')
     
     cursor.execute('INSERT OR IGNORE INTO users (email, password, is_admin, is_approved) VALUES (?, ?, 1, 1)', 
                    (admin_email, admin_pass))

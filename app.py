@@ -14,7 +14,6 @@ key: str = os.getenv("SUPABASE_KEY")
 
 if not url or not key:
     print("WARNING: Supabase credentials not found in environment variables.")
-    # Initialize optional client to prevent crash on import, but will fail runtime
     supabase = None
 else:
     supabase: Client = create_client(url, key)
@@ -24,9 +23,10 @@ def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
+    if not supabase:
+        return render_template('login.html', error="Database not configured")
+    
     try:
-        # Fetch user from Supabase using email (since ID might differ or we store UUID)
-        # Assuming we store 'id' in session which is the int/uuid from Supabase table 'users'
         response = supabase.table('users').select("*").eq('id', session['user_id']).execute()
         
         if not response.data:
@@ -50,6 +50,10 @@ def login():
         email = request.form['email']
         password = request.form['password']
         
+        if not supabase:
+            flash('Database not configured', 'error')
+            return render_template('login.html')
+        
         try:
             response = supabase.table('users').select("*").eq('email', email).execute()
             
@@ -63,7 +67,7 @@ def login():
                 else:
                     flash('Invalid email or password', 'error')
             else:
-                 flash('Invalid email or password', 'error')
+                flash('Invalid email or password', 'error')
                  
         except Exception as e:
             flash(f'Login error: {str(e)}', 'error')
@@ -77,14 +81,18 @@ def signup():
         password = request.form['password']
         hashed_pw = generate_password_hash(password)
         
+        if not supabase:
+            flash('Database not configured', 'error')
+            return render_template('signup.html')
+        
         try:
-            # Check exist
+            # Check if email exists
             check = supabase.table('users').select("email").eq('email', email).execute()
             if check.data:
                 flash('Email already registered.', 'error')
                 return render_template('signup.html')
 
-            # Insert
+            # Insert new user
             data = {
                 "email": email, 
                 "password": hashed_pw,
@@ -109,6 +117,10 @@ def logout():
 def admin_panel():
     if 'user_id' not in session or not session.get('is_admin'):
         return redirect(url_for('dashboard'))
+    
+    if not supabase:
+        flash("Database not configured", "error")
+        return redirect(url_for('dashboard'))
         
     try:
         # Get pending users
@@ -126,6 +138,10 @@ def approve_user(user_id):
     if 'user_id' not in session or not session.get('is_admin'):
         return redirect(url_for('dashboard'))
     
+    if not supabase:
+        flash("Database not configured", "error")
+        return redirect(url_for('admin_panel'))
+    
     try:
         supabase.table('users').update({"is_approved": True}).eq('id', user_id).execute()
         flash('User approved.', 'success')
@@ -138,6 +154,10 @@ def approve_user(user_id):
 def reject_user(user_id):
     if 'user_id' not in session or not session.get('is_admin'):
         return redirect(url_for('dashboard'))
+    
+    if not supabase:
+        flash("Database not configured", "error")
+        return redirect(url_for('admin_panel'))
         
     try:
         supabase.table('users').delete().eq('id', user_id).execute()

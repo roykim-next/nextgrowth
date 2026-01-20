@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <rect width="32" height="32" fill="#000000"/>
-  <!-- First flowing line: M-like shape from top-left, trough bottom-left, peak top-right -->
-  <path d="M 0 4 Q 8 12, 16 4 T 32 4" stroke="#D1D5DB" stroke-width="0.4" fill="none" opacity="0.7"/>
-  <!-- Second flowing line: W-like shape from bottom-left, peak top-left, trough bottom-right -->
-  <path d="M 0 28 Q 8 20, 16 28 T 32 28" stroke="#D1D5DB" stroke-width="0.4" fill="none" opacity="0.7"/>
-</svg>

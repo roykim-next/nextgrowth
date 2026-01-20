@@ -386,6 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Add Row Function (Global Scope)
+// Add Row Function (Global Scope)
 window.addDnuRow = function (sectionId) {
     const tbody = document.getElementById(sectionId);
     if (!tbody) return;
@@ -393,22 +394,52 @@ window.addDnuRow = function (sectionId) {
     const actionRow = tbody.querySelector('.action-row');
     const newRow = document.createElement('tr');
 
+    // Determine read-only state based on section (Section 4 is organic, no budget/cpa)
+    const isOrganic = sectionId === 'section-4-body';
+    const bgStyle = 'style="background-color: #f1f5f9;"';
+
     newRow.innerHTML = `
         <td class="channel-name"><input type="text" class="input-plain" value="New Channel"></td>
         <td><input type="number" class="input-compact dnu-input" value="0"></td>
-        <td><input type="number" class="input-compact budget-input" value="0"></td>
-        <td><input type="number" class="input-compact cpa-input" value="0" readonly></td>
+        <td><input type="number" class="input-compact budget-input" value="0" readonly ${bgStyle}></td>
+        <td><input type="number" class="input-compact cpa-input" value="0" ${isOrganic ? 'disabled ' + bgStyle : ''}></td>
         <td><input type="number" class="input-compact" value="0"></td>
         <td><input type="number" class="input-compact" value="0"></td>
-        <td><input type="number" class="input-compact" value="0"></td>
+        <td><input type="number" class="input-compact" value="0" readonly ${bgStyle}></td>
+        <td><input type="number" class="input-compact" value="0" readonly ${bgStyle}></td>
         <td><input type="number" class="input-compact" value="1.26"></td>
-        <td><input type="number" class="input-compact" value="0"></td>
+        <td><input type="number" class="input-compact" value="0" readonly ${bgStyle}></td>
     `;
 
     tbody.insertBefore(newRow, actionRow);
-
-    // Add delete functionality listener if needed, strictly optional for now as not requested.
 };
+
+function calculateLT(d1, d30, days) {
+    if (d1 <= 0) return 0;
+
+    // Retention function R(t) = a * t^(-b)
+    const a = d1 / 100;
+    let b = 0;
+
+    if (d30 > 0 && d30 < d1) {
+        b = -Math.log(d30 / d1) / Math.log(30);
+    } else if (d30 >= d1) {
+        b = 0;
+    } else {
+        b = 2.0;
+    }
+
+    let sum = 0;
+    for (let t = 0; t < days; t++) {
+        if (t === 0) {
+            sum += 1.0;
+        } else {
+            sum += a * Math.pow(t, -b);
+        }
+    }
+
+    return sum;
+}
 
 function updateDnuTotals() {
     const sections = ['section-1-body', 'section-2-body', 'section-3-body', 'section-4-body'];
@@ -417,10 +448,11 @@ function updateDnuTotals() {
 
     // Weighted Accumulators for Grand Total
     let grandWeightedRR = 0;
+    let grandWeightedRR30 = 0;
     let grandWeightedLt30 = 0;
     let grandWeightedLt180 = 0;
     let grandWeightedArpu = 0;
-    let grandWeightedRoi = 0;
+    let grandTotalRevenue = 0;
 
     sections.forEach(secId => {
         const tbody = document.getElementById(secId);
@@ -436,49 +468,82 @@ function updateDnuTotals() {
         let secDnu = 0;
         let secBudget = 0;
         let weightedRR = 0;
+        let weightedRR30 = 0;
         let weightedLt30 = 0;
         let weightedLt180 = 0;
         let weightedArpu = 0;
-        let weightedRoi = 0;
+        let secTotalRevenue = 0;
 
         rows.forEach(row => {
             const inputs = row.querySelectorAll('input');
-            // Indices: 0=Name, 1=DNU, 2=Budget, 3=CPA, 4=RR, 5=LT30, 6=LT180, 7=ARPU, 8=ROI
-            // Note: In organic section, budget/cpa might be disabled/missing, verify indices.
-            // Actually, querying by class/position is safer.
+            // Indices: 0=Channel, 1=DNU, 2=Budget, 3=CPA, 4=RR(D1), 5=RR30(D30), 6=LT30, 7=LT180, 8=ARPU, 9=ROI
 
-            // Let's assume standard structure for now as per template.
             const dnu = parseFloat(inputs[1]?.value) || 0;
-            const budget = parseFloat(inputs[2]?.value) || 0;
+            let cpa = parseFloat(inputs[3]?.value) || 0;
             const rr = parseFloat(inputs[4]?.value) || 0;
-            const lt30 = parseFloat(inputs[5]?.value) || 0;
-            const lt180 = parseFloat(inputs[6]?.value) || 0;
-            const arpu = parseFloat(inputs[7]?.value) || 0;
-            const roi = parseFloat(inputs[8]?.value) || 0;
+            const rr30 = parseFloat(inputs[5]?.value) || 0;
+            const arpu = parseFloat(inputs[8]?.value) || 0;
+            const budgetInput = inputs[2];
 
-            // Update CPA for the row
-            const cpaInput = inputs[3];
-            if (cpaInput && !cpaInput.hasAttribute('disabled')) { // Only update if not disabled
-                const cpa = dnu > 0 ? (budget / dnu) : 0;
-                cpaInput.value = cpa.toFixed(2);
+            // 1. Calculate Budget = DNU * CPA based on input
+            let budget = 0;
+            const cpaDisabled = inputs[3]?.hasAttribute('disabled');
+
+            if (cpaDisabled) {
+                budget = parseFloat(budgetInput.value) || 0;
+            } else {
+                budget = dnu * cpa;
+                budgetInput.value = Math.round(budget);
             }
 
+            // 2. Calculate LT30, LT180
+            const lt30 = calculateLT(rr, rr30, 30);
+            const lt180 = calculateLT(rr, rr30, 180);
+
+            if (inputs[6]) inputs[6].value = lt30.toFixed(2);
+            if (inputs[7]) inputs[7].value = lt180.toFixed(2);
+
+            // 3. Calculate ROI
+            const revenuePerUser = lt180 * arpu;
+            let roi = 0;
+            if (cpa > 0) {
+                roi = (revenuePerUser - cpa) / cpa;
+            } else {
+                roi = 0;
+            }
+
+            const roiInput = inputs[9];
+            if (roiInput) {
+                if (!cpaDisabled && cpa > 0) {
+                    roiInput.value = roi.toFixed(2);
+                } else if (cpaDisabled) {
+                    roiInput.value = "";
+                } else {
+                    roiInput.value = "0.00";
+                }
+            }
+
+            const totalRevenue = dnu * revenuePerUser;
+
+            // Accumulate
             secDnu += dnu;
             secBudget += budget;
             weightedRR += rr * dnu;
+            weightedRR30 += rr30 * dnu;
             weightedLt30 += lt30 * dnu;
             weightedLt180 += lt180 * dnu;
             weightedArpu += arpu * dnu;
-            weightedRoi += roi * dnu;
+            secTotalRevenue += totalRevenue;
         });
 
         // Calculate Section Averages
         const secCpa = secDnu > 0 ? (secBudget / secDnu) : 0;
         const secAvgRR = secDnu > 0 ? (weightedRR / secDnu) : 0;
+        const secAvgRR30 = secDnu > 0 ? (weightedRR30 / secDnu) : 0;
         const secAvgLt30 = secDnu > 0 ? (weightedLt30 / secDnu) : 0;
         const secAvgLt180 = secDnu > 0 ? (weightedLt180 / secDnu) : 0;
         const secAvgArpu = secDnu > 0 ? (weightedArpu / secDnu) : 0;
-        const secAvgRoi = secDnu > 0 ? (weightedRoi / secDnu) : 0;
+        const secAvgRoi = secBudget > 0 ? ((secTotalRevenue - secBudget) / secBudget) : 0;
 
         // Update Section Total Row
         const totalRow = tbody.querySelector('.section-total-row');
@@ -487,6 +552,7 @@ function updateDnuTotals() {
             totalRow.querySelector('.total-budget').textContent = Math.round(secBudget).toLocaleString();
             totalRow.querySelector('.total-cpa').textContent = secCpa.toFixed(2);
             totalRow.querySelector('.total-rr').textContent = secAvgRR.toFixed(2);
+            totalRow.querySelector('.total-rr30').textContent = secAvgRR30.toFixed(2);
             totalRow.querySelector('.total-lt30').textContent = secAvgLt30.toFixed(2);
             totalRow.querySelector('.total-lt180').textContent = secAvgLt180.toFixed(2);
             totalRow.querySelector('.total-arpu').textContent = secAvgArpu.toFixed(2);
@@ -497,27 +563,48 @@ function updateDnuTotals() {
         grandDnu += secDnu;
         grandBudget += secBudget;
         grandWeightedRR += weightedRR;
+        grandWeightedRR30 += weightedRR30;
         grandWeightedLt30 += weightedLt30;
         grandWeightedLt180 += weightedLt180;
         grandWeightedArpu += weightedArpu;
-        grandWeightedRoi += weightedRoi;
+        grandTotalRevenue += secTotalRevenue; // Sum revenue for Grand ROI
     });
 
     // Calculate Grand Total Averages
     const grandCpa = grandDnu > 0 ? (grandBudget / grandDnu) : 0;
     const grandAvgRR = grandDnu > 0 ? (grandWeightedRR / grandDnu) : 0;
+    const grandAvgRR30 = grandDnu > 0 ? (grandWeightedRR30 / grandDnu) : 0;
     const grandAvgLt30 = grandDnu > 0 ? (grandWeightedLt30 / grandDnu) : 0;
     const grandAvgLt180 = grandDnu > 0 ? (grandWeightedLt180 / grandDnu) : 0;
     const grandAvgArpu = grandDnu > 0 ? (grandWeightedArpu / grandDnu) : 0;
-    const grandAvgRoi = grandDnu > 0 ? (grandWeightedRoi / grandDnu) : 0;
+    const grandAvgRoi = grandBudget > 0 ? ((grandTotalRevenue - grandBudget) / grandBudget) : 0;
 
     // Update Grand Total Footer
     document.getElementById('grand-total-dnu').textContent = Math.round(grandDnu).toLocaleString();
     document.getElementById('grand-total-budget').textContent = Math.round(grandBudget).toLocaleString();
     document.getElementById('grand-total-cpa').textContent = grandCpa.toFixed(2);
     document.getElementById('grand-total-rr').textContent = grandAvgRR.toFixed(2);
+    document.getElementById('grand-total-rr30').textContent = grandAvgRR30.toFixed(2);
     document.getElementById('grand-total-lt30').textContent = grandAvgLt30.toFixed(2);
     document.getElementById('grand-total-lt180').textContent = grandAvgLt180.toFixed(2);
     document.getElementById('grand-total-arpu').textContent = grandAvgArpu.toFixed(2);
     document.getElementById('grand-total-roi').textContent = grandAvgRoi.toFixed(2);
+
+    // --- Setup Save Button Handler based on User Request ---
+    const saveBtn = document.getElementById('btn-save-dnu');
+    if (saveBtn) {
+        saveBtn.onclick = function () {
+            // Update Forecast Settings with Grand Totals
+            const dnuInput = document.getElementById('dnu');
+            const lt30Input = document.getElementById('lt30');
+            const lt180Input = document.getElementById('lt180');
+
+
+            if (dnuInput) dnuInput.value = Math.round(grandDnu).toLocaleString();
+            if (lt30Input) lt30Input.value = grandAvgLt30.toFixed(2);
+            if (lt180Input) lt180Input.value = grandAvgLt180.toFixed(2);
+
+            alert("DNU Totals saved to Forecast Settings! DNU: " + Math.round(grandDnu) + ", LT30: " + grandAvgLt30.toFixed(2) + ", LT180: " + grandAvgLt180.toFixed(2));
+        };
+    }
 }

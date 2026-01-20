@@ -11,5 +11,7 @@ ENV/
 users.db
 .env
 .env.local
+.env*.local
 .DS_Store
 *.log
+.vercel

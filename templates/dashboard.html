@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Growth Projection & DAU Prediction</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -59,19 +59,10 @@
                                 <tbody id="section-1-body" data-section="1">
                                     <!-- Section 1: Paid Ads - Android -->
                                     <tr class="dnu-section-header">
-                                        <td colspan="10">Section 1. Paid Ads - Android</td>
+                                        <td colspan="11">Section 1. Paid Ads - Android</td>
                                     </tr>
                                     <tr class="dnu-col-header">
-                                        <th>Channel</th>
-                                        <th>DNU</th>
-                                        <th>Budget ($)</th>
-                                        <th>CPA ($)</th>
-                                        <th>DNU D1 RR (%)</th>
-                                        <th>DNU D30 RR (%)</th>
-                                        <td colspan="12">Section 1. Paid Ads - Android</td>
-                                    </tr>
-                                    <tr class="dnu-col-header">
-                                        <th>App ID</th>
+                                        <th style="width: 40px; min-width: 40px;"></th>
                                         <th>Channel</th>
                                         <th>DNU</th>
                                         <th>Budget ($)</th>
@@ -84,6 +75,9 @@
                                         <th>ROI</th>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Google Ads"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="500"></td>
@@ -101,6 +95,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Meta Ads"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="0"></td>
@@ -118,6 +115,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="TikTok Ads"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="0"></td>
@@ -135,11 +135,12 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr class="action-row">
-                                        <td colspan="10" class="add-row-cell" onclick="addDnuRow('section-1-body')">
+                                        <td colspan="11" class="add-row-cell" onclick="toggleAddRowMode('section-1-body', this)">
                                             + Add Row
                                         </td>
                                     </tr>
                                     <tr class="section-total-row">
+                                        <td></td>
                                         <td>Total</td>
                                         <td class="total-dnu">0</td>
                                         <td class="total-budget">0</td>
@@ -156,9 +157,10 @@
                                 <tbody id="section-2-body" data-section="2">
                                     <!-- Section 2: Paid Ads - iOS -->
                                     <tr class="dnu-section-header">
-                                        <td colspan="10">Section 2. Paid Ads - iOS</td>
+                                        <td colspan="11">Section 2. Paid Ads - iOS</td>
                                     </tr>
                                     <tr class="dnu-col-header">
+                                        <th style="width: 40px; min-width: 40px;"></th>
                                         <th>Channel</th>
                                         <th>DNU</th>
                                         <th>Budget ($)</th>
@@ -171,6 +173,9 @@
                                         <th>ROI</th>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Apple Search Ads"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="250"></td>
@@ -188,6 +193,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Meta Ads (iOS)"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="0"></td>
@@ -205,11 +213,12 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr class="action-row">
-                                        <td colspan="10" class="add-row-cell" onclick="addDnuRow('section-2-body')">
+                                        <td colspan="11" class="add-row-cell" onclick="toggleAddRowMode('section-2-body', this)">
                                             + Add Row
                                         </td>
                                     </tr>
                                     <tr class="section-total-row">
+                                        <td></td>
                                         <td>Total</td>
                                         <td class="total-dnu">0</td>
                                         <td class="total-budget">0</td>
@@ -226,9 +235,10 @@
                                 <tbody id="section-3-body" data-section="3">
                                     <!-- Section 3: Others -->
                                     <tr class="dnu-section-header">
-                                        <td colspan="10">Section 3. Incentive, Influen MKT, Content Viral, Preload</td>
+                                        <td colspan="11">Section 3. Incentive, Influen MKT, Content Viral, Preload</td>
                                     </tr>
                                     <tr class="dnu-col-header">
+                                        <th style="width: 40px; min-width: 40px;"></th>
                                         <th>Channel</th>
                                         <th>DNU</th>
                                         <th>Budget ($)</th>
@@ -241,6 +251,9 @@
                                         <th>ROI</th>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Incentive"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="50"></td>
@@ -258,6 +271,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Influence MKT"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="50"></td>
@@ -275,6 +291,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Content Viral"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="100"></td>
@@ -292,6 +311,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain" value="Preload">
                                         </td>
                                         <td><input type="number" class="input-compact dnu-input" value="300"></td>
@@ -309,11 +331,12 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr class="action-row">
-                                        <td colspan="10" class="add-row-cell" onclick="addDnuRow('section-3-body')">
+                                        <td colspan="11" class="add-row-cell" onclick="toggleAddRowMode('section-3-body', this)">
                                             + Add Row
                                         </td>
                                     </tr>
                                     <tr class="section-total-row">
+                                        <td></td>
                                         <td>Total</td>
                                         <td class="total-dnu">0</td>
                                         <td class="total-budget">0</td>
@@ -330,9 +353,10 @@
                                 <tbody id="section-4-body" data-section="4">
                                     <!-- Section 4: Organic -->
                                     <tr class="dnu-section-header">
-                                        <td colspan="10">Section 4. Organic (No Budget/CPA/ROI)</td>
+                                        <td colspan="11">Section 4. Organic (No Budget/CPA/ROI)</td>
                                     </tr>
                                     <tr class="dnu-col-header">
+                                        <th style="width: 40px; min-width: 40px;"></th>
                                         <th>Channel</th>
                                         <th>DNU</th>
                                         <th>Budget ($)</th>
@@ -345,6 +369,9 @@
                                         <th>ROI</th>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Organic Android"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="100"></td>
@@ -363,6 +390,9 @@
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
                                     <tr>
+                                        <td class="delete-cell">
+                                            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>
+                                        </td>
                                         <td class="channel-name"><input type="text" class="input-plain"
                                                 value="Organic iOS"></td>
                                         <td><input type="number" class="input-compact dnu-input" value="39"></td>
@@ -380,7 +410,13 @@
                                         <td><input type="number" class="input-compact" value="" disabled
                                                 style="background-color: #f1f5f9;"></td>
                                     </tr>
+                                    <tr class="action-row">
+                                        <td colspan="11" class="add-row-cell" onclick="toggleAddRowMode('section-4-body', this)">
+                                            + Add Row
+                                        </td>
+                                    </tr>
                                     <tr class="section-total-row">
+                                        <td></td>
                                         <td>Total</td>
                                         <td class="total-dnu">0</td>
                                         <td class="total-budget">0</td>
@@ -395,6 +431,7 @@
                                 </tbody>
                                 <tfoot>
                                     <tr class="grand-total-row">
+                                        <td></td>
                                         <td>Grand Total</td>
                                         <td id="grand-total-dnu">0</td>
                                         <td id="grand-total-budget">0</td>
@@ -423,9 +460,9 @@
                             <div class="field-group">
                                 <label class="required">Forecast date</label>
                                 <div class="date-range-group">
-                                    <input type="date" class="input-premium" id="start-date">
+                                    <input type="date" class="input-premium" id="start-date" value="2026-01-26">
                                     <span class="range-sep">~</span>
-                                    <input type="date" class="input-premium" id="end-date">
+                                    <input type="date" class="input-premium" id="end-date" value="2026-07-25">
                                 </div>
                             </div>
                         </div>
@@ -457,35 +494,67 @@
                             </div>
                         </div>
 
-                        <!-- Row 3: Metrics -->
-                        <div class="form-row four-col">
+                        <!-- Row 3: Base Metrics -->
+                        <div class="form-row two-col">
                             <div class="field-group">
                                 <label class="required">Current DAU</label>
-                                <input type="text" value="3,600" class="input-premium" id="current-dau">
+                                <input type="text" value="0" class="input-premium" id="current-dau">
                             </div>
                             <div class="field-group">
-                                <label class="required">LT180</label>
-                                <input type="number" value="88.52" class="input-premium" id="lt180">
-                            </div>
-                            <div class="field-group">
-                                <label class="required">Daily New Users (DNU)</label>
-                                <input type="text" value="1,833" class="input-premium" id="dnu">
-                            </div>
-                            <div class="field-group">
-                                <label>LT30</label>
-                                <input type="number" value="14.75" class="input-premium" id="lt30">
+                                <label class="required">DNU</label>
+                                <input type="text" value="450" class="input-premium" id="dnu">
                             </div>
                         </div>
 
-                        <!-- Row 4: Advanced -->
-                        <div class="form-row two-col-mixed">
+                        <!-- Row 4: DNU D1 RR -->
+                        <div class="form-row one-col">
                             <div class="field-group">
-                                <label class="required">Stock old user decay rate percentiles</label>
+                                <label class="required">DNU D1 RR</label>
                                 <div class="input-with-unit">
-                                    <input type="number" value="54" class="input-premium" id="decay-rate">
+                                    <input type="number" value="35" class="input-premium" id="dnu-d1-rr">
                                     <span class="unit">%</span>
                                 </div>
-                                <span class="field-hint">Addition and subtraction in multiples of 10 only</span>
+                            </div>
+                        </div>
+
+                        <!-- Row 5: DNU D30 RR and LT30 (Related Metrics) -->
+                        <div class="form-row two-col">
+                            <div class="field-group">
+                                <label class="required">DNU D30 RR</label>
+                                <div class="input-with-unit">
+                                    <input type="number" value="15" class="input-premium" id="dnu-d30-rr">
+                                    <span class="unit">%</span>
+                                </div>
+                            </div>
+                            <div class="field-group">
+                                <label>LT30</label>
+                                <input type="number" value="13.87" class="input-premium" id="lt30" readonly style="background-color: #f1f5f9;">
+                            </div>
+                        </div>
+
+                        <!-- Row 6: DNU D180 RR and LT180 (Related Metrics) -->
+                        <div class="form-row two-col">
+                            <div class="field-group">
+                                <label class="required">DNU D180 RR</label>
+                                <div class="input-with-unit">
+                                    <input type="number" value="8" class="input-premium" id="dnu-d180-rr">
+                                    <span class="unit">%</span>
+                                </div>
+                            </div>
+                            <div class="field-group">
+                                <label>LT180</label>
+                                <input type="number" value="66.03" class="input-premium" id="lt180" readonly style="background-color: #f1f5f9;">
+                            </div>
+                        </div>
+
+                        <!-- Row 7: Existing User Retention & Result -->
+                        <div class="form-row two-col">
+                            <div class="field-group">
+                                <label class="required">Existing User Monthly Retention</label>
+                                <div class="input-with-unit">
+                                    <input type="number" value="60" class="input-premium" id="existing-monthly-retention">
+                                    <span class="unit">%</span>
+                                </div>
                             </div>
                             <div class="field-group result-display">
                                 <label>Predicted DAU (End Date)</label>
@@ -496,7 +565,8 @@
 
                     <div class="action-bar">
                         <button class="btn-primary" id="btn-run-projection">Run Projection</button>
-                        <button class="btn-secondary">Share</button>
+                        <button class="btn-secondary" id="btn-save">Save</button>
+                        <button class="btn-secondary" id="btn-share">Share</button>
                     </div>
                 </div>
             </section>
@@ -548,13 +618,12 @@
                                     <th>Growth (Net)</th>
                                     <th>Growth (%)</th>
                                     <th>Predict new DAU</th>
-                                    <th>Forecast stock DAU</th>
                                 </tr>
                             </thead>
                             <tbody id="forecast-table-body">
                                 <!-- Populated by JS -->
                                 <tr class="empty-state-row">
-                                    <td colspan="5" class="empty-state">No data available</td>
+                                    <td colspan="6" class="empty-state">No data available</td>
                                 </tr>
                             </tbody>
                         </table>

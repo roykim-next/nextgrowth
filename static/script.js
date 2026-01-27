@@ -105,16 +105,243 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const runBtn = document.getElementById('btn-run-projection');
 
-    // Set default dates: Today -> Today + 180 days
+    // Set default dates: 2026-01-26 -> 2026-07-25 (180 days)
     const startDateInput = document.getElementById('start-date');
     const endDateInput = document.getElementById('end-date');
     if (startDateInput && endDateInput) {
-        const today = new Date();
-        const future = new Date();
-        future.setDate(today.getDate() + 180);
+        // Default to 2026-01-26 ~ 2026-07-25 if not set
+        if (!startDateInput.value) {
+            startDateInput.value = '2026-01-26';
+        }
+        if (!endDateInput.value) {
+            endDateInput.value = '2026-07-25';
+        }
+    }
 
-        startDateInput.value = today.toISOString().split('T')[0];
-        endDateInput.value = future.toISOString().split('T')[0];
+    // Auto-calculate LT30 when DNU D30 RR changes (only LT30 updates)
+    function updateLT30() {
+        const dnuD1RRInput = document.getElementById('dnu-d1-rr');
+        const dnuD30RRInput = document.getElementById('dnu-d30-rr');
+        const dnuD180RRInput = document.getElementById('dnu-d180-rr');
+        const lt30Element = document.getElementById('lt30');
+
+        if (dnuD1RRInput && dnuD30RRInput && dnuD180RRInput && lt30Element) {
+            const dnuD1RR = parseFloat(dnuD1RRInput.value) || 0;
+            const dnuD30RR = parseFloat(dnuD30RRInput.value) || 0;
+            const dnuD180RR = parseFloat(dnuD180RRInput.value) || 0;
+
+            if (dnuD30RR > 0) {
+                const lt30 = calculateLT30(dnuD1RR, dnuD30RR, dnuD180RR);
+                lt30Element.value = lt30.toFixed(2);
+            }
+        }
+    }
+
+    // Auto-calculate LT180 when DNU D180 RR changes (only LT180 updates)
+    function updateLT180() {
+        const dnuD1RRInput = document.getElementById('dnu-d1-rr');
+        const dnuD30RRInput = document.getElementById('dnu-d30-rr');
+        const dnuD180RRInput = document.getElementById('dnu-d180-rr');
+        const lt180Element = document.getElementById('lt180');
+
+        if (dnuD1RRInput && dnuD30RRInput && dnuD180RRInput && lt180Element) {
+            const dnuD1RR = parseFloat(dnuD1RRInput.value) || 0;
+            const dnuD30RR = parseFloat(dnuD30RRInput.value) || 0;
+            const dnuD180RR = parseFloat(dnuD180RRInput.value) || 0;
+
+            if (dnuD180RR > 0) {
+                const lt180 = calculateLT180(dnuD1RR, dnuD30RR, dnuD180RR);
+                lt180Element.value = lt180.toFixed(2);
+            }
+        }
+    }
+
+    // Add event listeners for auto-calculation
+    const dnuD1RRInput = document.getElementById('dnu-d1-rr');
+    const dnuD30RRInput = document.getElementById('dnu-d30-rr');
+    const dnuD180RRInput = document.getElementById('dnu-d180-rr');
+    
+    if (dnuD1RRInput) {
+        dnuD1RRInput.addEventListener('input', () => {
+            // D1 RR 변경 시에는 둘 다 업데이트 (DAU 계산에 영향)
+            updateLT30();
+            updateLT180();
+        });
+    }
+    if (dnuD30RRInput) {
+        dnuD30RRInput.addEventListener('input', updateLT30); // D30 변경 시 LT30만 업데이트
+    }
+    if (dnuD180RRInput) {
+        dnuD180RRInput.addEventListener('input', updateLT180); // D180 변경 시 LT180만 업데이트
+    }
+
+    // Initial LT calculation
+    updateLT30();
+    updateLT180();
+
+    // Save and Load functionality
+    let savedSettings = null;
+    let isLocked = false;
+
+    function saveForecastSettings() {
+        const settings = {
+            startDate: document.getElementById('start-date')?.value || '',
+            endDate: document.getElementById('end-date')?.value || '',
+            appId: document.querySelector('select.input-premium')?.value || '',
+            country: document.querySelectorAll('select.input-premium')[1]?.value || '',
+            os: document.querySelectorAll('select.input-premium')[2]?.value || '',
+            currentDAU: document.getElementById('current-dau')?.value || '',
+            dnu: document.getElementById('dnu')?.value || '',
+            dnuD1RR: document.getElementById('dnu-d1-rr')?.value || '',
+            dnuD30RR: document.getElementById('dnu-d30-rr')?.value || '',
+            dnuD180RR: document.getElementById('dnu-d180-rr')?.value || '',
+            existingMonthlyRetention: document.getElementById('existing-monthly-retention')?.value || '',
+            timestamp: new Date().toISOString()
+        };
+        
+        localStorage.setItem('dauForecastSettings', JSON.stringify(settings));
+        savedSettings = settings;
+        
+        // Save only - don't lock, and unlock if previously locked
+        if (isLocked) {
+            isLocked = false;
+            unlockInputFields();
+        }
+        
+        // Update button text temporarily
+        const saveBtn = document.getElementById('btn-save');
+        if (saveBtn) {
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Saved!';
+            setTimeout(() => {
+                saveBtn.textContent = originalText;
+            }, 2000);
+        }
+        
+        alert('Forecast settings saved successfully!');
+    }
+
+    function lockInputFields() {
+        const inputIds = ['start-date', 'end-date', 'current-dau', 'dnu', 'dnu-d1-rr', 
+                         'dnu-d30-rr', 'dnu-d180-rr', 'existing-monthly-retention'];
+        
+        inputIds.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.readOnly = true;
+                input.style.backgroundColor = '#f1f5f9';
+                input.style.cursor = 'not-allowed';
+            }
+        });
+        
+        // Lock select elements
+        const selects = document.querySelectorAll('select.input-premium');
+        selects.forEach(select => {
+            select.disabled = true;
+            select.style.backgroundColor = '#f1f5f9';
+            select.style.cursor = 'not-allowed';
+        });
+    }
+
+    function unlockInputFields() {
+        const inputIds = ['start-date', 'end-date', 'current-dau', 'dnu', 'dnu-d1-rr', 
+                         'dnu-d30-rr', 'dnu-d180-rr', 'existing-monthly-retention'];
+        
+        inputIds.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.readOnly = false;
+                input.style.backgroundColor = '#ffffff';
+                input.style.cursor = 'text';
+            }
+        });
+        
+        // Unlock select elements
+        const selects = document.querySelectorAll('select.input-premium');
+        selects.forEach(select => {
+            select.disabled = false;
+            select.style.backgroundColor = '#ffffff';
+            select.style.cursor = 'pointer';
+        });
+    }
+
+    function restoreSavedValues() {
+        if (!savedSettings) return;
+        
+        if (savedSettings.startDate) document.getElementById('start-date').value = savedSettings.startDate;
+        if (savedSettings.endDate) document.getElementById('end-date').value = savedSettings.endDate;
+        if (savedSettings.appId) {
+            const appIdSelect = document.querySelector('select.input-premium');
+            if (appIdSelect) appIdSelect.value = savedSettings.appId;
+        }
+        if (savedSettings.country) {
+            const countrySelect = document.querySelectorAll('select.input-premium')[1];
+            if (countrySelect) countrySelect.value = savedSettings.country;
+        }
+        if (savedSettings.os) {
+            const osSelect = document.querySelectorAll('select.input-premium')[2];
+            if (osSelect) osSelect.value = savedSettings.os;
+        }
+        if (savedSettings.currentDAU) document.getElementById('current-dau').value = savedSettings.currentDAU;
+        if (savedSettings.dnu) document.getElementById('dnu').value = savedSettings.dnu;
+        if (savedSettings.dnuD1RR) document.getElementById('dnu-d1-rr').value = savedSettings.dnuD1RR;
+        if (savedSettings.dnuD30RR) document.getElementById('dnu-d30-rr').value = savedSettings.dnuD30RR;
+        if (savedSettings.dnuD180RR) document.getElementById('dnu-d180-rr').value = savedSettings.dnuD180RR;
+        if (savedSettings.existingMonthlyRetention) document.getElementById('existing-monthly-retention').value = savedSettings.existingMonthlyRetention;
+        
+        // LT values will be recalculated automatically
+        updateLT30();
+        updateLT180();
+    }
+
+    function loadForecastSettings() {
+        const saved = localStorage.getItem('dauForecastSettings');
+        if (!saved) return false;
+        
+        try {
+            savedSettings = JSON.parse(saved);
+            restoreSavedValues();
+            // Don't lock on load - just restore values
+            isLocked = false;
+            
+            return true;
+        } catch (e) {
+            console.error('Error loading saved settings:', e);
+            return false;
+        }
+    }
+
+    function clearSavedSettings() {
+        if (confirm('Are you sure you want to clear saved settings? This will unlock all fields.')) {
+            localStorage.removeItem('dauForecastSettings');
+            savedSettings = null;
+            isLocked = false;
+            unlockInputFields();
+            
+            // Update button state
+            const saveBtn = document.getElementById('btn-save');
+            if (saveBtn) {
+                saveBtn.textContent = 'Save';
+                saveBtn.style.opacity = '1';
+                saveBtn.disabled = false;
+            }
+            
+            alert('Saved settings cleared. All fields are now unlocked.');
+        }
+    }
+
+    // Save button event listener
+    const saveBtn = document.getElementById('btn-save');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', (e) => {
+            saveForecastSettings();
+        });
+    }
+
+    // Load saved settings on page load
+    const loaded = loadForecastSettings();
+    if (loaded) {
+        console.log('Saved forecast settings loaded and locked');
     }
 
     // Initial Simulation
@@ -139,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const headers = ['Date', 'Operating system', 'Forecast DAU (total)', 'Growth (Net)', 'Growth (%)', 'Predict new DAU', 'Forecast stock DAU'];
+            const headers = ['Date', 'Operating system', 'Forecast DAU (total)', 'Growth (Net)', 'Growth (%)', 'Predict new DAU'];
             const csvContent = [
                 headers.join(','),
                 ...window.lastForecastData.map(row => [
@@ -148,8 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     Math.round(row.total),
                     Math.round(row.growthNet),
                     row.growthPercent.toFixed(2) + '%',
-                    Math.round(row.newUsers),
-                    Math.round(row.stock)
+                    Math.round(row.newUsers)
                 ].join(','))
             ].join('\n');
 
@@ -162,6 +388,52 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        });
+    }
+
+    // Share button - Export chart as image
+    const shareBtn = document.getElementById('btn-share');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', () => {
+            if (!dauChart || !dauChart.data || dauChart.data.datasets[1].data.length === 0) {
+                alert('No chart data to share. Please run a forecast first.');
+                return;
+            }
+
+            try {
+                // Get chart as base64 image
+                const imageUrl = dauChart.toBase64Image('image/png', 1.0);
+                
+                // Create download link
+                const link = document.createElement('a');
+                link.href = imageUrl;
+                link.download = `dau_forecast_chart_${new Date().toISOString().split('T')[0]}.png`;
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Also try to copy to clipboard (optional, may not work in all browsers)
+                if (navigator.clipboard && navigator.clipboard.write) {
+                    fetch(imageUrl)
+                        .then(res => res.blob())
+                        .then(blob => {
+                            const item = new ClipboardItem({ 'image/png': blob });
+                            return navigator.clipboard.write([item]);
+                        })
+                        .then(() => {
+                            alert('Chart image saved and copied to clipboard!');
+                        })
+                        .catch(() => {
+                            alert('Chart image saved! (Clipboard copy not available in this browser)');
+                        });
+                } else {
+                    alert('Chart image saved!');
+                }
+            } catch (error) {
+                console.error('Error exporting chart:', error);
+                alert('Error exporting chart. Please try again.');
+            }
         });
     }
 
@@ -195,6 +467,134 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Calculate retention rate at day t using Shifted Power Law: R(t) = (t+1)^(-b)
+    // R(0) = 1, R(30) = D30/100, R(180) = D180/100
+    // Uses D30 and D180 to fit the curve and derive decay exponent b
+    function calculateRetentionRate(d30RR, d180RR, day) {
+        if (day === 0) return 1.0;
+        if (day < 0) return 0;
+        
+        if (d30RR <= 0 || d180RR <= 0) return 0;
+        
+        // Shifted Power Law: R(t) = (t+1)^(-b)
+        // R(30) = 31^(-b) = D30/100
+        // R(180) = 181^(-b) = D180/100
+        
+        // Calculate b from D30 and D180 using least squares approach
+        const r30 = d30RR / 100;
+        const r180 = d180RR / 100;
+        
+        // b30 = -log(r30) / log(31)
+        // b180 = -log(r180) / log(181)
+        // Use weighted average based on time points
+        const b30 = -Math.log(r30) / Math.log(31);
+        const b180 = -Math.log(r180) / Math.log(181);
+        
+        // Weighted average: weight by inverse of log(time) to give more weight to D30
+        const weight30 = 1 / Math.log(31);
+        const weight180 = 1 / Math.log(181);
+        const b = (b30 * weight30 + b180 * weight180) / (weight30 + weight180);
+        
+        // Calculate retention at day t: R(t) = (t+1)^(-b)
+        const retention = Math.pow(day + 1, -b);
+        return Math.max(0, Math.min(1, retention)); // Clamp between 0 and 1
+    }
+
+    // Calculate decay exponent b from D30 and D180 using Shifted Power Law
+    // R(t) = (t+1)^(-b)
+    // R(30) = 31^(-b) = D30/100
+    // R(180) = 181^(-b) = D180/100
+    function calculateDecayExponent(d30RR, d180RR) {
+        if (d30RR <= 0 || d180RR <= 0) return 0;
+        
+        const r30 = d30RR / 100;
+        const r180 = d180RR / 100;
+        
+        // Calculate b from each point
+        const b30 = -Math.log(r30) / Math.log(31);
+        const b180 = -Math.log(r180) / Math.log(181);
+        
+        // Weighted average: weight by inverse of log(time) to give more weight to D30
+        const weight30 = 1 / Math.log(31);
+        const weight180 = 1 / Math.log(181);
+        const b = (b30 * weight30 + b180 * weight180) / (weight30 + weight180);
+        
+        return b;
+    }
+
+    // Calculate LT30 using Shifted Power Law: R(t) = (t+1)^(-b)
+    // Uses only D30 to calculate b: R(30) = 31^(-b) = D30/100
+    // LT30 = sum from t=0 to 29 of R(t) = sum from t=0 to 29 of (t+1)^(-b)
+    function calculateLT30(d1RR, d30RR, d180RR) {
+        if (d30RR <= 0) return 0;
+        
+        // Calculate decay exponent b from D30 only
+        // R(30) = 31^(-b) = D30/100
+        // b = -log(D30/100) / log(31)
+        const r30 = d30RR / 100;
+        const b = -Math.log(r30) / Math.log(31);
+        
+        // Discrete sum: LT30 = sum from t=0 to 29 of (t+1)^(-b)
+        let sum = 0;
+        for (let t = 0; t < 30; t++) {
+            const retention = Math.pow(t + 1, -b);
+            sum += retention;
+        }
+        
+        return sum;
+    }
+
+    // Calculate LT180 using Shifted Power Law: R(t) = (t+1)^(-b)
+    // Uses only D180 to calculate b: R(180) = 181^(-b) = D180/100
+    // LT180 = sum from t=0 to 179 of R(t) = sum from t=0 to 179 of (t+1)^(-b)
+    function calculateLT180(d1RR, d30RR, d180RR) {
+        if (d180RR <= 0) return 0;
+        
+        // Calculate decay exponent b from D180 only
+        // R(180) = 181^(-b) = D180/100
+        // b = -log(D180/100) / log(181)
+        const r180 = d180RR / 100;
+        const b = -Math.log(r180) / Math.log(181);
+        
+        // Discrete sum: LT180 = sum from t=0 to 179 of (t+1)^(-b)
+        let sum = 0;
+        for (let t = 0; t < 180; t++) {
+            const retention = Math.pow(t + 1, -b);
+            sum += retention;
+        }
+        
+        return sum;
+    }
+
+    // Calculate LT (Lifetime) using discrete model
+    // Uses D1 and Dx (where x is 30 or 180) to calculate LT
+    function calculateLT(d1RR, dXRR, x, maxDays) {
+        if (d1RR <= 0 || dXRR <= 0) return 0;
+        
+        // Retention function R(t) = a * t^(-b)
+        const a = d1RR / 100;
+        let b = 0;
+        
+        // Calculate b from D1 and Dx
+        if (dXRR > 0 && dXRR < d1RR) {
+            b = -Math.log(dXRR / d1RR) / Math.log(x);
+        } else if (dXRR >= d1RR) {
+            b = 0;
+        } else {
+            b = 2.0;
+        }
+        
+        // Discrete sum: Day 0 (1.0) + Day 1 to maxDays-1
+        let sum = 1.0; // Day 0
+        
+        for (let day = 1; day < maxDays; day++) {
+            const retention = a * Math.pow(day, -b);
+            sum += retention;
+        }
+        
+        return sum;
+    }
+
     function generateData() {
         const startDateInput = document.getElementById('start-date');
         const endDateInput = document.getElementById('end-date');
@@ -212,74 +612,111 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const predictionData = [];
         const labels = [];
-        const stockData = [];
-        const newUserData = [];
 
-        // Base DAU
+        // Get input values
         const currentDauInput = document.getElementById('current-dau');
-        // Strip commas for calculation
-        let currentDAU = currentDauInput ? parseFloat(currentDauInput.value.replace(/,/g, '')) : 50000;
-
-        // Growth parameters
-        const lt180Element = document.getElementById('lt180');
-        const dnuElement = document.getElementById('dnu');
+        const dnuInput = document.getElementById('dnu');
+        const dnuD1RRInput = document.getElementById('dnu-d1-rr');
+        const dnuD30RRInput = document.getElementById('dnu-d30-rr');
+        const dnuD180RRInput = document.getElementById('dnu-d180-rr');
+        const existingMonthlyRetentionInput = document.getElementById('existing-monthly-retention');
 
         // Safety check
-        if (!lt180Element || !dnuElement) return;
+        if (!dnuInput || !dnuD1RRInput || !dnuD30RRInput || !dnuD180RRInput || !existingMonthlyRetentionInput) return;
 
-        const lt180_val = parseFloat(lt180Element.value);
-        const dnu_val = parseFloat(dnuElement.value.replace(/,/g, ''));
-        const dailyNewUsers = dnu_val;
+        let currentDAU = currentDauInput ? parseFloat(currentDauInput.value.replace(/,/g, '')) : 0;
+        const dnu = parseFloat(dnuInput.value.replace(/,/g, '')) || 0;
+        const dnuD1RR = parseFloat(dnuD1RRInput.value) || 0;
+        const dnuD30RR = parseFloat(dnuD30RRInput.value) || 0;
+        const dnuD180RR = parseFloat(dnuD180RRInput.value) || 0;
+        const existingMonthlyRetention = parseFloat(existingMonthlyRetentionInput.value) || 0;
 
-        // New parameters logic
+        // Calculate LT30 and LT180 using Shifted Power Law model
+        // R(t) = (t+1)^(-b), where b is derived from D30 and D180
+        const lt30 = calculateLT30(dnuD1RR, dnuD30RR, dnuD180RR);
+        const lt180 = calculateLT180(dnuD1RR, dnuD30RR, dnuD180RR);
+
+        // Update LT fields (read-only)
         const lt30Element = document.getElementById('lt30');
-        const decayElement = document.getElementById('decay-rate');
+        const lt180Element = document.getElementById('lt180');
+        if (lt30Element) lt30Element.value = lt30.toFixed(2);
+        if (lt180Element) lt180Element.value = lt180.toFixed(2);
 
-        const decayRateInput = decayElement ? parseFloat(decayElement.value) : 0;
-        const decayFactor = 1 - (decayRateInput / 1000);
+        // Calculate daily retention for existing users (monthly retention to daily)
+        const existingDailyRetention = Math.pow(existingMonthlyRetention / 100, 1 / 30);
 
-        // Retention r ≈ 1 - (1 / LT)
-        let retentionRate = lt180_val > 0 ? (1 - (1 / lt180_val)) : 0.98;
-        retentionRate *= decayFactor;
+        // Store cohorts: array of {day: age, users: count}
+        const cohorts = [];
 
-        // Generate Prediction (No History, just Forecast range)
+        // Generate Prediction
         let date = new Date(start);
-
-        // Prepare table data
         window.lastForecastData = [];
         const tableBody = document.getElementById('forecast-table-body');
         if (tableBody) tableBody.innerHTML = '';
         const fragment = document.createDocumentFragment();
 
-        // Helper to get OS value safely (assuming 3rd select)
+        // Helper to get OS value safely
         const selects = document.querySelectorAll('select.input-premium');
         const osValue = selects[2] ? selects[2].value : 'All';
+
+        // Track existing user DAU separately
+        let existingUserDAU = currentDAU;
 
         for (let i = 0; i <= daysPrediction; i++) {
             const dateStr = date.toISOString().split('T')[0];
             labels.push(dateStr);
 
-            // Push current value
-            predictionData.push(currentDAU);
+            // Add new cohort at the start of each day (except day 0)
+            if (i > 0) {
+                cohorts.push({ day: 0, users: dnu });
+            }
+
+            // Age existing cohorts and calculate retention
+            // Use Shifted Power Law: R(t) = (t+1)^(-b)
+            // b is derived from D30 and D180
+            let newUserDAU = 0;
+            const b = calculateDecayExponent(dnuD30RR, dnuD180RR);
+            
+            cohorts.forEach(cohort => {
+                cohort.day++;
+                // Calculate retention using Shifted Power Law: R(t) = (t+1)^(-b)
+                if (cohort.day >= 0 && dnuD30RR > 0 && dnuD180RR > 0) {
+                    const retention = Math.pow(cohort.day + 1, -b);
+                    newUserDAU += cohort.users * Math.max(0, Math.min(1, retention));
+                } else if (cohort.day === 0) {
+                    newUserDAU += cohort.users * 1.0; // Day 0 retention is 100%
+                } else {
+                    newUserDAU += cohort.users * 0; // Invalid retention
+                }
+            });
+
+            // Calculate existing user DAU (apply daily retention)
+            if (i > 0) {
+                existingUserDAU = existingUserDAU * existingDailyRetention;
+            }
+
+            // Total DAU = existing users + new user cohorts
+            const totalDAU = existingUserDAU + newUserDAU;
+            predictionData.push(totalDAU);
 
             // Calculate Components
-            const newUsers = dailyNewUsers;
-            const stockDAU = Math.max(0, currentDAU - newUsers);
+            const newUsers = i === 0 ? 0 : dnu;
+            const stockDAU = existingUserDAU;
 
             // Calculate Growth
             let netGrowth = 0;
             let growthPercent = 0;
             if (i > 0) {
                 const prevDAU = predictionData[i - 1];
-                netGrowth = currentDAU - prevDAU;
-                growthPercent = (netGrowth / prevDAU) * 100;
+                netGrowth = totalDAU - prevDAU;
+                growthPercent = prevDAU > 0 ? (netGrowth / prevDAU) * 100 : 0;
             }
 
             // Store detailed data
             const rowData = {
                 date: dateStr,
                 os: osValue,
-                total: currentDAU,
+                total: totalDAU,
                 growthNet: netGrowth,
                 growthPercent: growthPercent,
                 newUsers: newUsers,
@@ -292,23 +729,19 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td>${dateStr}</td>
                 <td>${osValue}</td>
-                <td>${Math.round(currentDAU).toLocaleString()}</td>
+                <td>${Math.round(totalDAU).toLocaleString()}</td>
                 <td class="${netGrowth >= 0 ? 'text-success' : 'text-danger'}">${netGrowth > 0 ? '+' : ''}${Math.round(netGrowth).toLocaleString()}</td>
                 <td class="${growthPercent >= 0 ? 'text-success' : 'text-danger'}">${growthPercent > 0 ? '+' : ''}${growthPercent.toFixed(2)}%</td>
                 <td>${Math.round(newUsers).toLocaleString()}</td>
-                <td>${Math.round(stockDAU).toLocaleString()}</td>
             `;
             fragment.appendChild(tr);
 
-            // Calculate next day
-            currentDAU = (currentDAU * retentionRate) + dailyNewUsers;
             date.setDate(date.getDate() + 1);
         }
 
         if (tableBody) tableBody.appendChild(fragment);
 
         dauChart.data.labels = labels;
-        // We only show Prediction now, so clear History or leave it empty
         dauChart.data.datasets[0].data = []; // History empty
         dauChart.data.datasets[1].data = predictionData;
 
@@ -316,17 +749,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update summary numbers
         const lastVal = predictionData[predictionData.length - 1];
-        document.querySelector('.value-highlight').textContent =
-            (lastVal / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' K';
+        const firstVal = predictionData[0];
+        const valueHighlight = document.querySelector('.value-highlight');
+        if (valueHighlight) {
+            valueHighlight.textContent = Math.round(lastVal).toLocaleString();
+        }
 
         // Update Chart Header Summary
-        // Daily New Users (Sync with input)
         document.querySelectorAll('.summary-item .value')[0].textContent =
-            parseInt(dnu_val).toLocaleString();
-        // Current DAU (Start of period)
+            parseInt(dnu).toLocaleString();
         document.querySelectorAll('.summary-item .value')[1].textContent =
-            Math.round(predictionData[0]).toLocaleString();
-        // Predicted DAU (End of period)
+            Math.round(firstVal).toLocaleString();
         document.querySelectorAll('.summary-item .value')[2].textContent =
             Math.round(lastVal).toLocaleString();
     }
@@ -385,7 +818,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Add Row Function (Global Scope)
+// Toggle Add Row Mode - Show/Hide Delete Buttons
+window.toggleAddRowMode = function(sectionId, buttonElement) {
+    const tbody = document.getElementById(sectionId);
+    if (!tbody) return;
+
+    const isAddMode = buttonElement.textContent.trim() === '+ Add Row';
+    
+    if (isAddMode) {
+        // Add a new row first
+        addDnuRow(sectionId);
+        
+        // Show delete buttons and change to "Add Row Cancel"
+        const deleteButtons = tbody.querySelectorAll('.btn-delete-row-circle');
+        const deleteCells = tbody.querySelectorAll('.delete-cell');
+        deleteButtons.forEach(btn => {
+            btn.style.display = 'flex';
+        });
+        deleteCells.forEach(cell => {
+            cell.style.width = '28px';
+            cell.style.minWidth = '28px';
+            cell.style.padding = '2px 4px';
+        });
+        buttonElement.textContent = '× Add Row Cancel';
+        buttonElement.onclick = function() {
+            toggleAddRowMode(sectionId, this);
+        };
+    } else {
+        // Hide delete buttons and change back to "Add Row"
+        const deleteButtons = tbody.querySelectorAll('.btn-delete-row-circle');
+        const deleteCells = tbody.querySelectorAll('.delete-cell');
+        deleteButtons.forEach(btn => {
+            btn.style.display = 'none';
+        });
+        deleteCells.forEach(cell => {
+            cell.style.width = '0';
+            cell.style.minWidth = '0';
+            cell.style.padding = '2px 0';
+        });
+        buttonElement.textContent = '+ Add Row';
+        buttonElement.onclick = function() {
+            toggleAddRowMode(sectionId, this);
+        };
+    }
+};
+
 // Add Row Function (Global Scope)
 window.addDnuRow = function (sectionId) {
     const tbody = document.getElementById(sectionId);
@@ -399,6 +876,9 @@ window.addDnuRow = function (sectionId) {
     const bgStyle = 'style="background-color: #f1f5f9;"';
 
     newRow.innerHTML = `
+        <td class="delete-cell">
+            <button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: flex;">−</button>
+        </td>
         <td class="channel-name"><input type="text" class="input-plain" value="New Channel"></td>
         <td><input type="number" class="input-compact dnu-input" value="0"></td>
         <td><input type="number" class="input-compact budget-input" value="0" readonly ${bgStyle}></td>
@@ -412,32 +892,127 @@ window.addDnuRow = function (sectionId) {
     `;
 
     tbody.insertBefore(newRow, actionRow);
+    
+    // Show delete buttons when adding a row
+    const deleteButtons = tbody.querySelectorAll('.btn-delete-row-circle');
+    const deleteCells = tbody.querySelectorAll('.delete-cell');
+    deleteButtons.forEach(btn => {
+        btn.style.display = 'flex';
+    });
+    deleteCells.forEach(cell => {
+        cell.style.width = '28px';
+        cell.style.minWidth = '28px';
+        cell.style.padding = '2px 4px';
+    });
+    
+    // Update the Add Row button to Cancel
+    const addRowButton = actionRow.querySelector('.add-row-cell');
+    if (addRowButton) {
+        addRowButton.textContent = '× Add Row Cancel';
+        addRowButton.onclick = function() {
+            toggleAddRowMode(sectionId, this);
+        };
+    }
 };
 
-function calculateLT(d1, d30, days) {
-    if (d1 <= 0) return 0;
-
-    // Retention function R(t) = a * t^(-b)
-    const a = d1 / 100;
-    let b = 0;
-
-    if (d30 > 0 && d30 < d1) {
-        b = -Math.log(d30 / d1) / Math.log(30);
-    } else if (d30 >= d1) {
-        b = 0;
-    } else {
-        b = 2.0;
+// Delete Row Function (Global Scope)
+window.deleteDnuRow = function(button) {
+    if (!confirm('Are you sure you want to delete this row?')) {
+        return;
     }
-
-    let sum = 0;
-    for (let t = 0; t < days; t++) {
-        if (t === 0) {
-            sum += 1.0;
-        } else {
-            sum += a * Math.pow(t, -b);
+    
+    const row = button.closest('tr');
+    if (row && !row.classList.contains('dnu-section-header') && 
+        !row.classList.contains('dnu-col-header') && 
+        !row.classList.contains('action-row') && 
+        !row.classList.contains('section-total-row') && 
+        !row.classList.contains('grand-total-row')) {
+        row.remove();
+        // Update totals after deletion
+        if (typeof updateDnuTotals === 'function') {
+            updateDnuTotals();
         }
     }
+};
 
+// Add delete buttons to existing rows on page load
+function addDeleteButtonsToExistingRows() {
+    const sections = ['section-1-body', 'section-2-body', 'section-3-body', 'section-4-body'];
+    
+    sections.forEach(sectionId => {
+        const tbody = document.getElementById(sectionId);
+        if (!tbody) return;
+        
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach(row => {
+            // Skip header, action, and total rows
+            if (row.classList.contains('dnu-section-header') || 
+                row.classList.contains('dnu-col-header') || 
+                row.classList.contains('action-row') || 
+                row.classList.contains('section-total-row')) {
+                return;
+            }
+            
+            // Check if delete button already exists
+            if (row.querySelector('.btn-delete-row-circle')) {
+                return;
+            }
+            
+            // Check if this row has data cells (not empty)
+            const cells = row.querySelectorAll('td');
+            if (cells.length > 0) {
+                // Check if first cell is already a delete cell
+                const firstCell = cells[0];
+                if (firstCell && firstCell.classList.contains('delete-cell')) {
+                    return; // Already has delete cell
+                }
+                
+                // Add delete button cell at the beginning
+                const deleteCell = document.createElement('td');
+                deleteCell.className = 'delete-cell';
+                deleteCell.style.width = '0';
+                deleteCell.style.minWidth = '0';
+                deleteCell.style.padding = '2px 0';
+                deleteCell.innerHTML = '<button class="btn-delete-row-circle" onclick="deleteDnuRow(this)" title="Delete Row" style="display: none;">−</button>';
+                row.insertBefore(deleteCell, firstCell);
+            }
+        });
+    });
+}
+
+// Add delete buttons to existing rows - will be called after page loads
+// This function is called from the main DOMContentLoaded handler
+
+// Calculate LT using Shifted Power Law: R(t) = (t+1)^(-b)
+// Uses D1 and D30 to calculate b
+// R(1) = 2^(-b) = D1/100, R(30) = 31^(-b) = D30/100
+// b is calculated from both D1 and D30 using weighted average
+function calculateLT(d1, d30, days) {
+    if (d1 <= 0 || d30 <= 0) return 0;
+    
+    // Calculate decay exponent b from D1 and D30
+    // Using both points to get a better fit
+    const r1 = d1 / 100;
+    const r30 = d30 / 100;
+    
+    // Calculate b from D1: R(1) = 2^(-b) => b = -log(r1) / log(2)
+    const b1 = -Math.log(r1) / Math.log(2);
+    
+    // Calculate b from D30: R(30) = 31^(-b) => b = -log(r30) / log(31)
+    const b30 = -Math.log(r30) / Math.log(31);
+    
+    // Use weighted average (more weight on D30 for longer-term predictions)
+    // For LT30, use more weight on D30; for LT180, use more weight on D30
+    const weight = days <= 30 ? 0.3 : 0.2; // More weight on D30 for longer periods
+    const b = weight * b1 + (1 - weight) * b30;
+    
+    // Discrete sum: LT = sum from t=0 to (days-1) of (t+1)^(-b)
+    let sum = 0;
+    for (let t = 0; t < days; t++) {
+        const retention = Math.pow(t + 1, -b);
+        sum += retention;
+    }
+    
     return sum;
 }
 
@@ -477,6 +1052,7 @@ function updateDnuTotals() {
         rows.forEach(row => {
             const inputs = row.querySelectorAll('input');
             // Indices: 0=Channel, 1=DNU, 2=Budget, 3=CPA, 4=RR(D1), 5=RR30(D30), 6=LT30, 7=LT180, 8=ARPU, 9=ROI
+            // Note: First column is now delete button, so indices are shifted
 
             const dnu = parseFloat(inputs[1]?.value) || 0;
             let cpa = parseFloat(inputs[3]?.value) || 0;
@@ -607,4 +1183,7 @@ function updateDnuTotals() {
             alert("DNU Totals saved to Forecast Settings! DNU: " + Math.round(grandDnu) + ", LT30: " + grandAvgLt30.toFixed(2) + ", LT180: " + grandAvgLt180.toFixed(2));
         };
     }
+    
+    // Add delete buttons to existing rows
+    setTimeout(addDeleteButtonsToExistingRows, 100);
 }

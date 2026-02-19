@@ -4,9 +4,13 @@ import os
 import sys
 import json
 import traceback
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
-from urllib.parse import quote
+import socket
+# Set default socket timeout to 30 seconds
+socket.setdefaulttimeout(30)
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 try:
     from dotenv import load_dotenv
@@ -17,6 +21,7 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_for_demo_only")
 
+# Supabase configuration
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 IS_VERCEL = os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")
@@ -24,45 +29,70 @@ USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
 print(f"USE_SUPABASE: {USE_SUPABASE}, IS_VERCEL: {IS_VERCEL}", flush=True)
 
+# SQLite setup for local development only
 DB_NAME = None
 if not USE_SUPABASE and not IS_VERCEL:
     DB_NAME = "users.db"
     print("Using SQLite for local development", flush=True)
 
+# Configure retry strategy for requests
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"]
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+http = requests.Session()
+http.mount("https://", adapter)
+http.mount("http://", adapter)
 
 def supabase_request(method, table, params=None, data=None, filters=None):
+    """Make a direct HTTP request to Supabase PostgREST API using requests with retries."""
     url = f"{SUPABASE_URL}/rest/v1/{table}"
+    
+    # Build query parameters
+    query_params = {}
     if filters:
-        filter_parts = []
-        for key, value in filters.items():
-            filter_parts.append(f"{key}={value}")
-        url += "?" + "&".join(filter_parts)
-    elif params:
-        url += "?" + params
+        query_params.update(filters)
+    # If raw params string is provided, we need to handle it manually or parse it
+    # For simplicity, we'll try to keep params as dict in future refactoring, 
+    # but for compatibility with previous code, let's handle string params.
+    # Note: requests params argument expects a dict or bytes.
+    # We will append string params to URL if necessary.
+    
+    full_url = url
+    if params:
+        full_url += "?" + params
+    elif filters:
+        # Convert filters to query string if provided as dict
+        filter_parts = [f"{k}={v}" for k, v in filters.items()]
+        if filter_parts:
+            full_url += "?" + "&".join(filter_parts)
+            
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
+    
     if method == "GET":
         headers["Accept"] = "application/json"
     elif method in ("POST", "PATCH", "DELETE"):
         headers["Prefer"] = "return=representation"
-    body = json.dumps(data).encode("utf-8") if data else None
-    req = Request(url, data=body, headers=headers, method=method)
+    
     try:
-        with urlopen(req) as response:
-            response_data = response.read().decode("utf-8")
-            if response_data:
-                return json.loads(response_data)
-            return []
-    except HTTPError as e:
-        error_body = e.read().decode("utf-8")
-        print(f"Supabase HTTP Error {e.code}: {error_body}", flush=True)
-        raise Exception(f"Supabase error: {error_body}")
-    except URLError as e:
-        print(f"Supabase URL Error: {e.reason}", flush=True)
-        raise Exception(f"Connection error: {e.reason}")
+        response = http.request(method, full_url, json=data, headers=headers, timeout=10)
+        response.raise_for_status()
+        if response.text:
+            return response.json()
+        return []
+    except requests.exceptions.RequestException as e:
+        print(f"Supabase Request Error: {e}", flush=True)
+        # Log response text if available for debugging
+        if hasattr(e, 'response') and e.response:
+            print(f"Response Content: {e.response.text}", flush=True)
+        raise Exception(f"Supabase connection error: {str(e)}")
 
 
 def get_db():
@@ -84,14 +114,12 @@ def verify_password(stored_password, input_password):
         pass
     return stored_password == input_password
 
-
 def is_user_admin(user):
     if "is_admin" in user:
         return bool(user["is_admin"])
     if "role" in user:
         return user["role"] == "admin"
     return False
-
 
 def is_user_approved(user):
     if "is_approved" in user:
@@ -100,26 +128,32 @@ def is_user_approved(user):
         return user["status"] == "active"
     return False
 
-
 @app.route("/debug-env")
 def debug_env():
     return jsonify({
         "SUPABASE_URL_present": bool(SUPABASE_URL),
         "SUPABASE_KEY_present": bool(SUPABASE_KEY),
+        "VERCEL_present": bool(os.environ.get("VERCEL")),
+        "VERCEL_ENV": os.environ.get("VERCEL_ENV", "not set"),
         "USE_SUPABASE": USE_SUPABASE,
         "IS_VERCEL": bool(IS_VERCEL),
         "python_version": sys.version,
-        "method": "urllib (no httpx)",
+        "method": "requests (with socket timeout=30)",
     })
-
 
 @app.route("/debug-test-query")
 def debug_test_query():
     try:
         if not USE_SUPABASE:
             return jsonify({"error": "Supabase not configured"})
+        # Using raw params string for compatibility with existing structure
         result = supabase_request("GET", "users", params="select=email&limit=1")
-        return jsonify({"success": True, "method": "urllib", "data_count": len(result) if result else 0})
+        return jsonify({
+            "success": True,
+            "method": "requests",
+            "data_count": len(result) if result else 0,
+            "first_email": result[0]["email"] if result else None
+        })
     except Exception as e:
         return jsonify({"error": str(e), "traceback": traceback.format_exc()})
 
@@ -153,7 +187,6 @@ def dashboard():
         traceback.print_exc()
         return render_template("login.html", error="Database connection error")
 
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -162,7 +195,8 @@ def login():
         print(f"LOGIN: email={email}, USE_SUPABASE={USE_SUPABASE}", flush=True)
         try:
             if USE_SUPABASE:
-                print("LOGIN: Querying Supabase via urllib...", flush=True)
+                print("LOGIN: Querying Supabase via requests...", flush=True)
+                from urllib.parse import quote
                 users = supabase_request("GET", "users", params=f"select=*&email=eq.{quote(email)}")
                 print(f"LOGIN: Got {len(users) if users else 0} results", flush=True)
                 user = users[0] if users else None
@@ -197,6 +231,7 @@ def signup():
         hashed_pw = generate_password_hash(password, method="pbkdf2:sha256")
         try:
             if USE_SUPABASE:
+                from urllib.parse import quote
                 existing = supabase_request("GET", "users", params=f"select=email&email=eq.{quote(email)}")
                 if existing:
                     flash("Email already registered.", "error")
@@ -221,12 +256,10 @@ def signup():
             flash(f"Signup error: {str(e)}", "error")
     return render_template("signup.html")
 
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
-
 
 @app.route("/admin")
 def admin_panel():
@@ -249,7 +282,6 @@ def admin_panel():
         flash(f"Error loading admin panel: {e}", "error")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/approve/<user_id>")
 def approve_user(user_id):
     if "user_id" not in session or not session.get("is_admin"):
@@ -268,7 +300,6 @@ def approve_user(user_id):
         flash(f"Error approving user: {e}", "error")
     return redirect(url_for("admin_panel"))
 
-
 @app.route("/reject/<user_id>")
 def reject_user(user_id):
     if "user_id" not in session or not session.get("is_admin"):
@@ -286,7 +317,6 @@ def reject_user(user_id):
     except Exception as e:
         flash(f"Error rejecting user: {e}", "error")
     return redirect(url_for("admin_panel"))
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8085, debug=True)

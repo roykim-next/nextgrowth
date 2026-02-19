@@ -12,24 +12,62 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_for_demo_only")
 # Use Supabase for Vercel, SQLite for local
 url: str = os.getenv("SUPABASE_URL")
 key: str = os.getenv("SUPABASE_KEY")
+IS_VERCEL = os.getenv("VERCEL") or os.getenv("VERCEL_ENV")
 USE_SUPABASE = url and key
 
 if USE_SUPABASE:
     from supabase import create_client, Client
     supabase: Client = create_client(url, key)
     print("Using Supabase for database")
+elif IS_VERCEL:
+    supabase = None
+    DB_NAME = None
+    print("WARNING: Running on Vercel without Supabase configuration!")
 else:
     supabase = None
     DB_NAME = "users.db"
     print("Using SQLite for database")
 
+
 def get_db():
     """Get SQLite database connection"""
     if USE_SUPABASE:
         return None
-    conn = sqlite3.connect(DB_NAME)
+    if IS_VERCEL and not USE_SUPABASE:
+        raise RuntimeError("Database not available. Please configure SUPABASE_URL and SUPABASE_KEY environment variables in Vercel.")
+    conn = sqlite3.connect(DB_NAME, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def verify_password(stored_password, input_password):
+    """Verify password - supports both hashed and plain-text passwords"""
+    try:
+        if check_password_hash(stored_password, input_password):
+            return True
+    except Exception:
+        pass
+    return stored_password == input_password
+
+
+def is_user_admin(user):
+    """Check if user is admin - supports both schema formats"""
+    if 'is_admin' in user:
+        return bool(user['is_admin'])
+    if 'role' in user:
+        return user['role'] == 'admin'
+    return False
+
+
+def is_user_approved(user):
+    """Check if user is approved - supports both schema formats"""
+    if 'is_approved' in user:
+        return bool(user['is_approved'])
+    if 'status' in user:
+        return user['status'] == 'active'
+    return False
+
 
 @app.route('/')
 def dashboard():
@@ -55,7 +93,7 @@ def dashboard():
                 return redirect(url_for('login'))
             user = dict(user_row)
         
-        if user['is_approved']:
+        if is_user_approved(user):
             return render_template('dashboard.html', user=user)
         else:
             return render_template('pending.html')
@@ -86,10 +124,10 @@ def login():
                 user = dict(user_row) if user_row else None
             
             if user:
-                if check_password_hash(user['password'], password):
+                if verify_password(user['password'], password):
                     session['user_id'] = user['id']
                     session['email'] = user['email']
-                    session['is_admin'] = bool(user['is_admin'])
+                    session['is_admin'] = is_user_admin(user)
                     return redirect(url_for('dashboard'))
                 else:
                     flash('Invalid email or password', 'error')
@@ -97,7 +135,11 @@ def login():
                 flash('Invalid email or password', 'error')
                  
         except Exception as e:
-            flash(f'Login error: {str(e)}', 'error')
+            print(f"Login error: {e}")
+            if IS_VERCEL and not USE_SUPABASE:
+                flash('Database not configured. Please set SUPABASE_URL and SUPABASE_KEY in Vercel environment variables.', 'error')
+            else:
+                flash(f'Login error: {str(e)}', 'error')
             
     return render_template('login.html')
 
@@ -110,32 +152,28 @@ def signup():
         
         try:
             if USE_SUPABASE:
-                # Check if email exists
                 check = supabase.table('users').select("email").eq('email', email).execute()
                 if check.data:
                     flash('Email already registered.', 'error')
                     return render_template('signup.html')
 
-                # Insert new user
                 data = {
                     "email": email, 
                     "password": hashed_pw,
-                    "is_admin": False,
-                    "is_approved": False
+                    "role": "user",
+                    "status": "pending"
                 }
                 supabase.table('users').insert(data).execute()
             else:
                 conn = get_db()
                 cursor = conn.cursor()
                 
-                # Check if email exists
                 cursor.execute('SELECT email FROM users WHERE email = ?', (email,))
                 if cursor.fetchone():
                     conn.close()
                     flash('Email already registered.', 'error')
                     return render_template('signup.html')
 
-                # Insert new user
                 cursor.execute('INSERT INTO users (email, password, is_admin, is_approved) VALUES (?, ?, ?, ?)',
                              (email, hashed_pw, False, False))
                 conn.commit()
@@ -160,22 +198,18 @@ def admin_panel():
         
     try:
         if USE_SUPABASE:
-            # Get pending users
-            pending = supabase.table('users').select("*").eq('is_approved', False).execute()
-            # Get approved users (excluding admin)
-            approved = supabase.table('users').select("*").eq('is_approved', True).eq('is_admin', False).execute()
+            pending = supabase.table('users').select("*").eq('status', 'pending').execute()
+            approved = supabase.table('users').select("*").eq('status', 'active').neq('role', 'admin').execute()
             pending_users = pending.data
             approved_users = approved.data
         else:
             conn = get_db()
             cursor = conn.cursor()
             
-            # Get pending users
             cursor.execute('SELECT * FROM users WHERE is_approved = ?', (False,))
             pending_rows = cursor.fetchall()
             pending_users = [dict(row) for row in pending_rows]
             
-            # Get approved users (excluding admin)
             cursor.execute('SELECT * FROM users WHERE is_approved = ? AND is_admin = ?', (True, False))
             approved_rows = cursor.fetchall()
             approved_users = [dict(row) for row in approved_rows]
@@ -194,7 +228,7 @@ def approve_user(user_id):
     
     try:
         if USE_SUPABASE:
-            supabase.table('users').update({"is_approved": True}).eq('id', user_id).execute()
+            supabase.table('users').update({"status": "active"}).eq('id', user_id).execute()
         else:
             conn = get_db()
             cursor = conn.cursor()

@@ -1,40 +1,60 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-import sqlite3
-from dotenv import load_dotenv
+import sys
 
-load_dotenv()
+# Try to load dotenv, but don't fail if not available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_for_demo_only")
 
+# Debug: Log all environment variables (masked)
+print(f"Python version: {sys.version}", flush=True)
+print(f"SUPABASE_URL present: {bool(os.getenv('SUPABASE_URL'))}", flush=True)
+print(f"SUPABASE_KEY present: {bool(os.getenv('SUPABASE_KEY'))}", flush=True)
+print(f"VERCEL present: {bool(os.getenv('VERCEL'))}", flush=True)
+print(f"VERCEL_ENV present: {bool(os.getenv('VERCEL_ENV'))}", flush=True)
+
 # Use Supabase for Vercel, SQLite for local
-url: str = os.getenv("SUPABASE_URL")
-key: str = os.getenv("SUPABASE_KEY")
-IS_VERCEL = os.getenv("VERCEL") or os.getenv("VERCEL_ENV")
-USE_SUPABASE = url and key
+url = os.environ.get("SUPABASE_URL", "")
+key = os.environ.get("SUPABASE_KEY", "")
+IS_VERCEL = os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")
+USE_SUPABASE = bool(url and key)
+
+print(f"USE_SUPABASE: {USE_SUPABASE}", flush=True)
+print(f"IS_VERCEL: {IS_VERCEL}", flush=True)
+if url:
+    print(f"SUPABASE_URL starts with: {url[:30]}...", flush=True)
+
+supabase = None
+DB_NAME = None
 
 if USE_SUPABASE:
-    from supabase import create_client, Client
-    supabase: Client = create_client(url, key)
-    print("Using Supabase for database")
+    try:
+        from supabase import create_client, Client
+        supabase: Client = create_client(url, key)
+        print("SUCCESS: Using Supabase for database", flush=True)
+    except Exception as e:
+        print(f"ERROR: Failed to create Supabase client: {e}", flush=True)
+        USE_SUPABASE = False
 elif IS_VERCEL:
-    supabase = None
-    DB_NAME = None
-    print("WARNING: Running on Vercel without Supabase configuration!")
+    print("WARNING: Running on Vercel without Supabase configuration!", flush=True)
 else:
-    supabase = None
     DB_NAME = "users.db"
-    print("Using SQLite for database")
+    print("Using SQLite for database", flush=True)
 
 
 def get_db():
-    """Get SQLite database connection"""
     if USE_SUPABASE:
         return None
     if IS_VERCEL and not USE_SUPABASE:
         raise RuntimeError("Database not available. Please configure SUPABASE_URL and SUPABASE_KEY environment variables in Vercel.")
+    import sqlite3
     conn = sqlite3.connect(DB_NAME, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
@@ -42,7 +62,6 @@ def get_db():
 
 
 def verify_password(stored_password, input_password):
-    """Verify password - supports both hashed and plain-text passwords"""
     try:
         if check_password_hash(stored_password, input_password):
             return True
@@ -52,7 +71,6 @@ def verify_password(stored_password, input_password):
 
 
 def is_user_admin(user):
-    """Check if user is admin - supports both schema formats"""
     if 'is_admin' in user:
         return bool(user['is_admin'])
     if 'role' in user:
@@ -61,12 +79,27 @@ def is_user_admin(user):
 
 
 def is_user_approved(user):
-    """Check if user is approved - supports both schema formats"""
     if 'is_approved' in user:
         return bool(user['is_approved'])
     if 'status' in user:
         return user['status'] == 'active'
     return False
+
+
+@app.route('/debug-env')
+def debug_env():
+    env_info = {
+        "SUPABASE_URL_present": bool(os.environ.get("SUPABASE_URL")),
+        "SUPABASE_KEY_present": bool(os.environ.get("SUPABASE_KEY")),
+        "VERCEL_present": bool(os.environ.get("VERCEL")),
+        "VERCEL_ENV": os.environ.get("VERCEL_ENV", "not set"),
+        "USE_SUPABASE": USE_SUPABASE,
+        "IS_VERCEL": bool(IS_VERCEL),
+        "supabase_client_exists": supabase is not None,
+        "python_version": sys.version,
+        "env_keys_count": len(os.environ),
+    }
+    return jsonify(env_info)
 
 
 @app.route('/')
@@ -99,7 +132,7 @@ def dashboard():
             return render_template('pending.html')
             
     except Exception as e:
-        print(f"Error fetching user: {e}")
+        print(f"Error fetching user: {e}", flush=True)
         return render_template('login.html', error="Database connection error")
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -135,7 +168,7 @@ def login():
                 flash('Invalid email or password', 'error')
                  
         except Exception as e:
-            print(f"Login error: {e}")
+            print(f"Login error: {e}", flush=True)
             if IS_VERCEL and not USE_SUPABASE:
                 flash('Database not configured. Please set SUPABASE_URL and SUPABASE_KEY in Vercel environment variables.', 'error')
             else:

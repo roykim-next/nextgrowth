@@ -2,7 +2,11 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import sys
+import json
 import traceback
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+from urllib.parse import quote
 
 try:
     from dotenv import load_dotenv
@@ -13,48 +17,64 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_for_demo_only")
 
-print(f"Python version: {sys.version}", flush=True)
-print(f"SUPABASE_URL present: {bool(os.getenv('SUPABASE_URL'))}", flush=True)
-print(f"SUPABASE_KEY present: {bool(os.getenv('SUPABASE_KEY'))}", flush=True)
-
-url = os.environ.get("SUPABASE_URL", "")
-key = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 IS_VERCEL = os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")
-USE_SUPABASE = bool(url and key)
+USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
-print(f"USE_SUPABASE: {USE_SUPABASE}", flush=True)
-print(f"IS_VERCEL: {IS_VERCEL}", flush=True)
+print(f"USE_SUPABASE: {USE_SUPABASE}, IS_VERCEL: {IS_VERCEL}", flush=True)
 
-supabase = None
 DB_NAME = None
-
-if USE_SUPABASE:
-    try:
-        from supabase import create_client, Client
-        supabase = create_client(url, key)
-        print("SUCCESS: Supabase client created", flush=True)
-    except Exception as e:
-        print(f"ERROR creating Supabase client: {e}", flush=True)
-        traceback.print_exc()
-        USE_SUPABASE = False
-elif IS_VERCEL:
-    print("WARNING: Vercel without Supabase!", flush=True)
-else:
+if not USE_SUPABASE and not IS_VERCEL:
     DB_NAME = "users.db"
-    print("Using SQLite", flush=True)
+    print("Using SQLite for local development", flush=True)
+
+
+def supabase_request(method, table, params=None, data=None, filters=None):
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    if filters:
+        filter_parts = []
+        for key, value in filters.items():
+            filter_parts.append(f"{key}={value}")
+        url += "?" + "&".join(filter_parts)
+    elif params:
+        url += "?" + params
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if method == "GET":
+        headers["Accept"] = "application/json"
+    elif method in ("POST", "PATCH", "DELETE"):
+        headers["Prefer"] = "return=representation"
+    body = json.dumps(data).encode("utf-8") if data else None
+    req = Request(url, data=body, headers=headers, method=method)
+    try:
+        with urlopen(req) as response:
+            response_data = response.read().decode("utf-8")
+            if response_data:
+                return json.loads(response_data)
+            return []
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        print(f"Supabase HTTP Error {e.code}: {error_body}", flush=True)
+        raise Exception(f"Supabase error: {error_body}")
+    except URLError as e:
+        print(f"Supabase URL Error: {e.reason}", flush=True)
+        raise Exception(f"Connection error: {e.reason}")
 
 
 def get_db():
     if USE_SUPABASE:
         return None
-    if IS_VERCEL and not USE_SUPABASE:
+    if IS_VERCEL:
         raise RuntimeError("Database not available on Vercel without Supabase")
     import sqlite3
     conn = sqlite3.connect(DB_NAME, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def verify_password(stored_password, input_password):
     try:
@@ -83,26 +103,23 @@ def is_user_approved(user):
 
 @app.route("/debug-env")
 def debug_env():
-    env_info = {
-        "SUPABASE_URL_present": bool(os.environ.get("SUPABASE_URL")),
-        "SUPABASE_KEY_present": bool(os.environ.get("SUPABASE_KEY")),
-        "VERCEL_present": bool(os.environ.get("VERCEL")),
-        "VERCEL_ENV": os.environ.get("VERCEL_ENV", "not set"),
+    return jsonify({
+        "SUPABASE_URL_present": bool(SUPABASE_URL),
+        "SUPABASE_KEY_present": bool(SUPABASE_KEY),
         "USE_SUPABASE": USE_SUPABASE,
         "IS_VERCEL": bool(IS_VERCEL),
-        "supabase_client_exists": supabase is not None,
         "python_version": sys.version,
-    }
-    return jsonify(env_info)
+        "method": "urllib (no httpx)",
+    })
 
 
 @app.route("/debug-test-query")
 def debug_test_query():
     try:
-        if not USE_SUPABASE or supabase is None:
+        if not USE_SUPABASE:
             return jsonify({"error": "Supabase not configured"})
-        response = supabase.table("users").select("email").limit(1).execute()
-        return jsonify({"success": True, "data_count": len(response.data) if response.data else 0})
+        result = supabase_request("GET", "users", params="select=email&limit=1")
+        return jsonify({"success": True, "method": "urllib", "data_count": len(result) if result else 0})
     except Exception as e:
         return jsonify({"error": str(e), "traceback": traceback.format_exc()})
 
@@ -112,11 +129,11 @@ def dashboard():
         return redirect(url_for("login"))
     try:
         if USE_SUPABASE:
-            response = supabase.table("users").select("*").eq("id", session["user_id"]).execute()
-            if not response.data:
+            users = supabase_request("GET", "users", params=f"select=*&id=eq.{session['user_id']}")
+            if not users:
                 session.clear()
                 return redirect(url_for("login"))
-            user = response.data[0]
+            user = users[0]
         else:
             conn = get_db()
             cursor = conn.cursor()
@@ -142,15 +159,14 @@ def login():
     if request.method == "POST":
         email = request.form["email"]
         password = request.form["password"]
-        print(f"LOGIN: email={email}, USE_SUPABASE={USE_SUPABASE}, client={supabase is not None}", flush=True)
+        print(f"LOGIN: email={email}, USE_SUPABASE={USE_SUPABASE}", flush=True)
         try:
             if USE_SUPABASE:
-                print("LOGIN: Querying Supabase...", flush=True)
-                response = supabase.table("users").select("*").eq("email", email).execute()
-                print(f"LOGIN: Supabase responded, count={len(response.data) if response.data else 0}", flush=True)
-                user = response.data[0] if response.data else None
+                print("LOGIN: Querying Supabase via urllib...", flush=True)
+                users = supabase_request("GET", "users", params=f"select=*&email=eq.{quote(email)}")
+                print(f"LOGIN: Got {len(users) if users else 0} results", flush=True)
+                user = users[0] if users else None
             else:
-                print("LOGIN: Using SQLite...", flush=True)
                 conn = get_db()
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
@@ -181,12 +197,11 @@ def signup():
         hashed_pw = generate_password_hash(password, method="pbkdf2:sha256")
         try:
             if USE_SUPABASE:
-                check = supabase.table("users").select("email").eq("email", email).execute()
-                if check.data:
+                existing = supabase_request("GET", "users", params=f"select=email&email=eq.{quote(email)}")
+                if existing:
                     flash("Email already registered.", "error")
                     return render_template("signup.html")
-                data = {"email": email, "password": hashed_pw, "role": "user", "status": "pending"}
-                supabase.table("users").insert(data).execute()
+                supabase_request("POST", "users", data={"email": email, "password": hashed_pw, "role": "user", "status": "pending"})
             else:
                 conn = get_db()
                 cursor = conn.cursor()
@@ -219,10 +234,8 @@ def admin_panel():
         return redirect(url_for("dashboard"))
     try:
         if USE_SUPABASE:
-            pending = supabase.table("users").select("*").eq("status", "pending").execute()
-            approved = supabase.table("users").select("*").eq("status", "active").neq("role", "admin").execute()
-            pending_users = pending.data
-            approved_users = approved.data
+            pending_users = supabase_request("GET", "users", params="select=*&status=eq.pending")
+            approved_users = supabase_request("GET", "users", params="select=*&status=eq.active&role=neq.admin")
         else:
             conn = get_db()
             cursor = conn.cursor()
@@ -243,7 +256,7 @@ def approve_user(user_id):
         return redirect(url_for("dashboard"))
     try:
         if USE_SUPABASE:
-            supabase.table("users").update({"status": "active"}).eq("id", user_id).execute()
+            supabase_request("PATCH", "users", params=f"id=eq.{user_id}", data={"status": "active"})
         else:
             conn = get_db()
             cursor = conn.cursor()
@@ -262,7 +275,7 @@ def reject_user(user_id):
         return redirect(url_for("dashboard"))
     try:
         if USE_SUPABASE:
-            supabase.table("users").delete().eq("id", user_id).execute()
+            supabase_request("DELETE", "users", params=f"id=eq.{user_id}")
         else:
             conn = get_db()
             cursor = conn.cursor()

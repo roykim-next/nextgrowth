@@ -504,65 +504,58 @@ document.addEventListener('DOMContentLoaded', () => {
     // R(t) = (t+1)^(-b)
     // R(30) = 31^(-b) = D30/100
     // R(180) = 181^(-b) = D180/100
-    function calculateDecayExponent(d30RR, d180RR) {
-        if (d30RR <= 0 || d180RR <= 0) return 0;
-        
-        const r30 = d30RR / 100;
+    function calculateDecayExponent(d1RR, d30RR, d180RR) {
+        if (d1RR <= 0 || d180RR <= 0) return 0;
+
+        const r1 = d1RR / 100;
         const r180 = d180RR / 100;
-        
-        // Calculate b from each point
-        const b30 = -Math.log(r30) / Math.log(31);
-        const b180 = -Math.log(r180) / Math.log(181);
-        
-        // Weighted average: weight by inverse of log(time) to give more weight to D30
-        const weight30 = 1 / Math.log(31);
-        const weight180 = 1 / Math.log(181);
-        const b = (b30 * weight30 + b180 * weight180) / (weight30 + weight180);
-        
+
+        // Two-segment model: R(t) = r1 * t^(-b) for t >= 1
+        // Anchor D1 and D180: r1 * 180^(-b) = r180
+        // => b = -log(r180 / r1) / log(180)
+        if (r180 >= r1) return 0;
+        const b = -Math.log(r180 / r1) / Math.log(180);
+
         return b;
     }
 
-    // Calculate LT30 using Shifted Power Law: R(t) = (t+1)^(-b)
-    // Uses only D30 to calculate b: R(30) = 31^(-b) = D30/100
-    // LT30 = sum from t=0 to 29 of R(t) = sum from t=0 to 29 of (t+1)^(-b)
+    // Calculate LT30 using two-segment model:
+    // R(0) = 1.0, R(t) = (D1/100) * t^(-b) for t >= 1
+    // b anchored to D1 and D180: (D1/100) * 180^(-b) = D180/100
     function calculateLT30(d1RR, d30RR, d180RR) {
-        if (d30RR <= 0) return 0;
-        
-        // Calculate decay exponent b from D30 only
-        // R(30) = 31^(-b) = D30/100
-        // b = -log(D30/100) / log(31)
-        const r30 = d30RR / 100;
-        const b = -Math.log(r30) / Math.log(31);
-        
-        // Discrete sum: LT30 = sum from t=0 to 29 of (t+1)^(-b)
-        let sum = 0;
-        for (let t = 0; t < 30; t++) {
-            const retention = Math.pow(t + 1, -b);
-            sum += retention;
+        if (d1RR <= 0 || d180RR <= 0) return 0;
+
+        const r1 = d1RR / 100;
+        const r180 = d180RR / 100;
+        if (r180 >= r1) return 0;
+        const b = -Math.log(r180 / r1) / Math.log(180);
+
+        // Day 0: R(0) = 1.0, Day t >= 1: R(t) = r1 * t^(-b)
+        let sum = 1.0;
+        for (let t = 1; t < 30; t++) {
+            sum += r1 * Math.pow(t, -b);
         }
-        
+
         return sum;
     }
 
-    // Calculate LT180 using Shifted Power Law: R(t) = (t+1)^(-b)
-    // Uses only D180 to calculate b: R(180) = 181^(-b) = D180/100
-    // LT180 = sum from t=0 to 179 of R(t) = sum from t=0 to 179 of (t+1)^(-b)
+    // Calculate LT180 using two-segment model:
+    // R(0) = 1.0, R(t) = (D1/100) * t^(-b) for t >= 1
+    // b anchored to D1 and D180: (D1/100) * 180^(-b) = D180/100
     function calculateLT180(d1RR, d30RR, d180RR) {
-        if (d180RR <= 0) return 0;
-        
-        // Calculate decay exponent b from D180 only
-        // R(180) = 181^(-b) = D180/100
-        // b = -log(D180/100) / log(181)
+        if (d1RR <= 0 || d180RR <= 0) return 0;
+
+        const r1 = d1RR / 100;
         const r180 = d180RR / 100;
-        const b = -Math.log(r180) / Math.log(181);
-        
-        // Discrete sum: LT180 = sum from t=0 to 179 of (t+1)^(-b)
-        let sum = 0;
-        for (let t = 0; t < 180; t++) {
-            const retention = Math.pow(t + 1, -b);
-            sum += retention;
+        if (r180 >= r1) return 0;
+        const b = -Math.log(r180 / r1) / Math.log(180);
+
+        // Day 0: R(0) = 1.0, Day t >= 1: R(t) = r1 * t^(-b)
+        let sum = 1.0;
+        for (let t = 1; t < 180; t++) {
+            sum += r1 * Math.pow(t, -b);
         }
-        
+
         return sum;
     }
 
@@ -672,21 +665,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Age existing cohorts and calculate retention
-            // Use Shifted Power Law: R(t) = (t+1)^(-b)
-            // b is derived from D30 and D180
+            // Two-segment model: R(t) = (D1/100) * t^(-b) for t >= 1
+            // b anchored to D1 and D180
             let newUserDAU = 0;
-            const b = calculateDecayExponent(dnuD30RR, dnuD180RR);
-            
+            const b = calculateDecayExponent(dnuD1RR, dnuD30RR, dnuD180RR);
+
             cohorts.forEach(cohort => {
                 cohort.day++;
-                // Calculate retention using Shifted Power Law: R(t) = (t+1)^(-b)
-                if (cohort.day >= 0 && dnuD30RR > 0 && dnuD180RR > 0) {
-                    const retention = Math.pow(cohort.day + 1, -b);
+                if (cohort.day >= 1 && dnuD1RR > 0 && dnuD180RR > 0) {
+                    const retention = (dnuD1RR / 100) * Math.pow(cohort.day, -b);
                     newUserDAU += cohort.users * Math.max(0, Math.min(1, retention));
-                } else if (cohort.day === 0) {
-                    newUserDAU += cohort.users * 1.0; // Day 0 retention is 100%
-                } else {
-                    newUserDAU += cohort.users * 0; // Invalid retention
                 }
             });
 
@@ -983,36 +971,25 @@ function addDeleteButtonsToExistingRows() {
 // Add delete buttons to existing rows - will be called after page loads
 // This function is called from the main DOMContentLoaded handler
 
-// Calculate LT using Shifted Power Law: R(t) = (t+1)^(-b)
-// Uses D1 and D30 to calculate b
-// R(1) = 2^(-b) = D1/100, R(30) = 31^(-b) = D30/100
-// b is calculated from both D1 and D30 using weighted average
+// Calculate LT using two-segment model:
+// R(0) = 1.0, R(t) = (D1/100) * t^(-b) for t >= 1
+// b anchored to D1 and D30: (D1/100) * 30^(-b) = D30/100
+// => b = -log(D30/D1) / log(30)
 function calculateLT(d1, d30, days) {
     if (d1 <= 0 || d30 <= 0) return 0;
-    
-    // Calculate decay exponent b from D1 and D30
-    // Using both points to get a better fit
+
     const r1 = d1 / 100;
     const r30 = d30 / 100;
-    
-    // Calculate b from D1: R(1) = 2^(-b) => b = -log(r1) / log(2)
-    const b1 = -Math.log(r1) / Math.log(2);
-    
-    // Calculate b from D30: R(30) = 31^(-b) => b = -log(r30) / log(31)
-    const b30 = -Math.log(r30) / Math.log(31);
-    
-    // Use weighted average (more weight on D30 for longer-term predictions)
-    // For LT30, use more weight on D30; for LT180, use more weight on D30
-    const weight = days <= 30 ? 0.3 : 0.2; // More weight on D30 for longer periods
-    const b = weight * b1 + (1 - weight) * b30;
-    
-    // Discrete sum: LT = sum from t=0 to (days-1) of (t+1)^(-b)
-    let sum = 0;
-    for (let t = 0; t < days; t++) {
-        const retention = Math.pow(t + 1, -b);
-        sum += retention;
+    if (r30 >= r1) return 0;
+
+    const b = -Math.log(r30 / r1) / Math.log(30);
+
+    // Day 0: R(0) = 1.0, Day t >= 1: R(t) = r1 * t^(-b)
+    let sum = 1.0;
+    for (let t = 1; t < days; t++) {
+        sum += r1 * Math.pow(t, -b);
     }
-    
+
     return sum;
 }
 

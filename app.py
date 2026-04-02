@@ -230,13 +230,15 @@ def signup():
         password = request.form["password"]
         hashed_pw = generate_password_hash(password, method="pbkdf2:sha256")
         try:
+            auto_approve = email.endswith("@nextsecurities.com")
             if USE_SUPABASE:
                 from urllib.parse import quote
                 existing = supabase_request("GET", "users", params=f"select=email&email=eq.{quote(email)}")
                 if existing:
                     flash("Email already registered.", "error")
                     return render_template("signup.html")
-                supabase_request("POST", "users", data={"email": email, "password": hashed_pw, "role": "user", "status": "pending"})
+                status = "active" if auto_approve else "pending"
+                supabase_request("POST", "users", data={"email": email, "password": hashed_pw, "role": "user", "status": status})
             else:
                 conn = get_db()
                 cursor = conn.cursor()
@@ -245,10 +247,13 @@ def signup():
                     conn.close()
                     flash("Email already registered.", "error")
                     return render_template("signup.html")
-                cursor.execute("INSERT INTO users (email, password, is_admin, is_approved) VALUES (?, ?, ?, ?)", (email, hashed_pw, False, False))
+                cursor.execute("INSERT INTO users (email, password, is_admin, is_approved) VALUES (?, ?, ?, ?)", (email, hashed_pw, False, auto_approve))
                 conn.commit()
                 conn.close()
-            flash("Account created! Please wait for admin approval.", "success")
+            if auto_approve:
+                flash("Account created! You can now log in.", "success")
+            else:
+                flash("Account created! Please wait for admin approval.", "success")
             return redirect(url_for("login"))
         except Exception as e:
             print(f"SIGNUP ERROR: {e}", flush=True)

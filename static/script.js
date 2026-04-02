@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
     gradientPrediction.addColorStop(0, 'rgba(15, 23, 42, 0.4)'); // Slate 900 - dark gray
     gradientPrediction.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
 
+    const gradientAggressive = ctx.createLinearGradient(0, 0, 0, 400);
+    gradientAggressive.addColorStop(0, 'rgba(5, 150, 105, 0.3)'); // Emerald
+    gradientAggressive.addColorStop(1, 'rgba(5, 150, 105, 0.0)');
+
     let dauChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -26,12 +30,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     pointRadius: 0
                 },
                 {
-                    label: 'Predicted DAU',
+                    label: 'Base DAU',
                     data: [],
                     borderColor: '#0f172a', // Black
                     backgroundColor: gradientPrediction,
                     borderWidth: 2,
                     borderDash: [5, 5],
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0
+                },
+                {
+                    label: 'Aggressive DAU',
+                    data: [],
+                    borderColor: '#059669', // Emerald
+                    backgroundColor: gradientAggressive,
+                    borderWidth: 2,
+                    borderDash: [3, 3],
                     fill: true,
                     tension: 0.4,
                     pointRadius: 0
@@ -187,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const settings = {
             startDate: document.getElementById('start-date')?.value || '',
             endDate: document.getElementById('end-date')?.value || '',
-            appId: document.querySelector('select.input-premium')?.value || '',
+            modelType: document.getElementById('model-type')?.value || 'both',
             country: document.querySelectorAll('select.input-premium')[1]?.value || '',
             os: document.querySelectorAll('select.input-premium')[2]?.value || '',
             currentDAU: document.getElementById('current-dau')?.value || '',
@@ -588,6 +603,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return sum;
     }
 
+    // Run a single DAU simulation with given parameters
+    function runSimulation(daysPrediction, start, params) {
+        const { dnu, dnuD1RR, dnuD30RR, dnuD180RR, existingMonthlyRetention, currentDAU } = params;
+        const data = [];
+        const cohorts = [];
+        const existingDailyRetention = Math.pow(existingMonthlyRetention / 100, 1 / 30);
+        const b = calculateDecayExponent(dnuD1RR, dnuD30RR, dnuD180RR);
+        let existingUserDAU = currentDAU;
+
+        for (let i = 0; i <= daysPrediction; i++) {
+            if (i > 0) {
+                cohorts.push({ day: 0, users: dnu });
+            }
+
+            let newUserDAU = 0;
+            cohorts.forEach(cohort => {
+                cohort.day++;
+                if (cohort.day >= 1 && dnuD1RR > 0 && dnuD180RR > 0) {
+                    const retention = (dnuD1RR / 100) * Math.pow(cohort.day, -b);
+                    newUserDAU += cohort.users * Math.max(0, Math.min(1, retention));
+                }
+            });
+
+            if (i > 0) {
+                existingUserDAU = existingUserDAU * existingDailyRetention;
+            }
+
+            data.push(existingUserDAU + newUserDAU);
+        }
+        return data;
+    }
+
     function generateData() {
         const startDateInput = document.getElementById('start-date');
         const endDateInput = document.getElementById('end-date');
@@ -597,14 +644,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const start = new Date(startDateInput.value);
         const end = new Date(endDateInput.value);
 
-        // Calculate difference in days
         const diffTime = Math.abs(end - start);
         const daysPrediction = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
         if (!daysPrediction || daysPrediction < 0) return;
-
-        const predictionData = [];
-        const labels = [];
 
         // Get input values
         const currentDauInput = document.getElementById('current-dau');
@@ -613,106 +655,78 @@ document.addEventListener('DOMContentLoaded', () => {
         const dnuD30RRInput = document.getElementById('dnu-d30-rr');
         const dnuD180RRInput = document.getElementById('dnu-d180-rr');
         const existingMonthlyRetentionInput = document.getElementById('existing-monthly-retention');
+        const modelTypeSelect = document.getElementById('model-type');
 
-        // Safety check
         if (!dnuInput || !dnuD1RRInput || !dnuD30RRInput || !dnuD180RRInput || !existingMonthlyRetentionInput) return;
 
-        let currentDAU = currentDauInput ? parseFloat(currentDauInput.value.replace(/,/g, '')) : 0;
+        const currentDAU = currentDauInput ? parseFloat(currentDauInput.value.replace(/,/g, '')) : 0;
         const dnu = parseFloat(dnuInput.value.replace(/,/g, '')) || 0;
         const dnuD1RR = parseFloat(dnuD1RRInput.value) || 0;
         const dnuD30RR = parseFloat(dnuD30RRInput.value) || 0;
         const dnuD180RR = parseFloat(dnuD180RRInput.value) || 0;
         const existingMonthlyRetention = parseFloat(existingMonthlyRetentionInput.value) || 0;
+        const modelType = modelTypeSelect ? modelTypeSelect.value : 'both';
 
-        // Calculate LT30 and LT180 using Shifted Power Law model
-        // R(t) = (t+1)^(-b), where b is derived from D30 and D180
+        // Update LT fields
         const lt30 = calculateLT30(dnuD1RR, dnuD30RR, dnuD180RR);
         const lt180 = calculateLT180(dnuD1RR, dnuD30RR, dnuD180RR);
-
-        // Update LT fields (read-only)
         const lt30Element = document.getElementById('lt30');
         const lt180Element = document.getElementById('lt180');
         if (lt30Element) lt30Element.value = lt30.toFixed(2);
         if (lt180Element) lt180Element.value = lt180.toFixed(2);
 
-        // Calculate daily retention for existing users (monthly retention to daily)
-        const existingDailyRetention = Math.pow(existingMonthlyRetention / 100, 1 / 30);
+        // Base model parameters (as entered)
+        const baseParams = { dnu, dnuD1RR, dnuD30RR, dnuD180RR, existingMonthlyRetention, currentDAU };
 
-        // Store cohorts: array of {day: age, users: count}
-        const cohorts = [];
+        // Aggressive model: DNU x1.5, D1 RR +5%p, D180 RR +3%p, Monthly Retention +5%p
+        const aggrParams = {
+            dnu: Math.round(dnu * 1.5),
+            dnuD1RR: Math.min(dnuD1RR * 1.15, 100),
+            dnuD30RR: Math.min(dnuD30RR * 1.2, dnuD1RR),
+            dnuD180RR: Math.min(dnuD180RR * 1.3, dnuD30RR),
+            existingMonthlyRetention: Math.min(existingMonthlyRetention + 5, 100),
+            currentDAU
+        };
 
-        // Generate Prediction
+        // Run simulations
+        const baseData = runSimulation(daysPrediction, start, baseParams);
+        const aggrData = runSimulation(daysPrediction, start, aggrParams);
+
+        // Generate labels
+        const labels = [];
         let date = new Date(start);
+        for (let i = 0; i <= daysPrediction; i++) {
+            labels.push(date.toISOString().split('T')[0]);
+            date.setDate(date.getDate() + 1);
+        }
+
+        // Determine which data to show in table
+        const showBase = modelType === 'base' || modelType === 'both';
+        const showAggr = modelType === 'aggressive' || modelType === 'both';
+        const primaryData = modelType === 'aggressive' ? aggrData : baseData;
+        const primaryDnu = modelType === 'aggressive' ? aggrParams.dnu : dnu;
+
+        // Build table
+        const selects = document.querySelectorAll('select.input-premium');
+        const osValue = selects[2] ? selects[2].value : 'All';
         window.lastForecastData = [];
         const tableBody = document.getElementById('forecast-table-body');
         if (tableBody) tableBody.innerHTML = '';
         const fragment = document.createDocumentFragment();
 
-        // Helper to get OS value safely
-        const selects = document.querySelectorAll('select.input-premium');
-        const osValue = selects[2] ? selects[2].value : 'All';
-
-        // Track existing user DAU separately
-        let existingUserDAU = currentDAU;
-
         for (let i = 0; i <= daysPrediction; i++) {
-            const dateStr = date.toISOString().split('T')[0];
-            labels.push(dateStr);
-
-            // Add new cohort at the start of each day (except day 0)
+            const dateStr = labels[i];
+            const totalDAU = primaryData[i];
+            const newUsers = i === 0 ? 0 : primaryDnu;
+            let netGrowth = 0, growthPercent = 0;
             if (i > 0) {
-                cohorts.push({ day: 0, users: dnu });
+                netGrowth = totalDAU - primaryData[i - 1];
+                growthPercent = primaryData[i - 1] > 0 ? (netGrowth / primaryData[i - 1]) * 100 : 0;
             }
 
-            // Age existing cohorts and calculate retention
-            // Two-segment model: R(t) = (D1/100) * t^(-b) for t >= 1
-            // b anchored to D1 and D180
-            let newUserDAU = 0;
-            const b = calculateDecayExponent(dnuD1RR, dnuD30RR, dnuD180RR);
-
-            cohorts.forEach(cohort => {
-                cohort.day++;
-                if (cohort.day >= 1 && dnuD1RR > 0 && dnuD180RR > 0) {
-                    const retention = (dnuD1RR / 100) * Math.pow(cohort.day, -b);
-                    newUserDAU += cohort.users * Math.max(0, Math.min(1, retention));
-                }
-            });
-
-            // Calculate existing user DAU (apply daily retention)
-            if (i > 0) {
-                existingUserDAU = existingUserDAU * existingDailyRetention;
-            }
-
-            // Total DAU = existing users + new user cohorts
-            const totalDAU = existingUserDAU + newUserDAU;
-            predictionData.push(totalDAU);
-
-            // Calculate Components
-            const newUsers = i === 0 ? 0 : dnu;
-            const stockDAU = existingUserDAU;
-
-            // Calculate Growth
-            let netGrowth = 0;
-            let growthPercent = 0;
-            if (i > 0) {
-                const prevDAU = predictionData[i - 1];
-                netGrowth = totalDAU - prevDAU;
-                growthPercent = prevDAU > 0 ? (netGrowth / prevDAU) * 100 : 0;
-            }
-
-            // Store detailed data
-            const rowData = {
-                date: dateStr,
-                os: osValue,
-                total: totalDAU,
-                growthNet: netGrowth,
-                growthPercent: growthPercent,
-                newUsers: newUsers,
-                stock: stockDAU
-            };
+            const rowData = { date: dateStr, os: osValue, total: totalDAU, growthNet: netGrowth, growthPercent, newUsers };
             window.lastForecastData.push(rowData);
 
-            // Create Table Row
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${dateStr}</td>
@@ -723,33 +737,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${Math.round(newUsers).toLocaleString()}</td>
             `;
             fragment.appendChild(tr);
-
-            date.setDate(date.getDate() + 1);
         }
-
         if (tableBody) tableBody.appendChild(fragment);
 
+        // Update chart
         dauChart.data.labels = labels;
         dauChart.data.datasets[0].data = []; // History empty
-        dauChart.data.datasets[1].data = predictionData;
-
+        dauChart.data.datasets[1].data = showBase ? baseData : [];
+        dauChart.data.datasets[2].data = showAggr ? aggrData : [];
         dauChart.update();
 
-        // Update summary numbers
-        const lastVal = predictionData[predictionData.length - 1];
-        const firstVal = predictionData[0];
-        const valueHighlight = document.querySelector('.value-highlight');
+        // Update predicted DAU displays
+        const baseLastVal = baseData[baseData.length - 1];
+        const aggrLastVal = aggrData[aggrData.length - 1];
+        const valueHighlight = document.getElementById('predicted-dau-base');
+        const baseLabelEl = document.getElementById('predicted-dau-base-label');
+        const aggrLabelEl = document.getElementById('predicted-dau-aggr-label');
+
         if (valueHighlight) {
-            valueHighlight.textContent = Math.round(lastVal).toLocaleString();
+            if (modelType === 'aggressive') {
+                valueHighlight.textContent = Math.round(aggrLastVal).toLocaleString();
+            } else {
+                valueHighlight.textContent = Math.round(baseLastVal).toLocaleString();
+            }
         }
+        if (baseLabelEl) baseLabelEl.textContent = Math.round(baseLastVal).toLocaleString();
+        if (aggrLabelEl) aggrLabelEl.textContent = Math.round(aggrLastVal).toLocaleString();
 
         // Update Chart Header Summary
         document.querySelectorAll('.summary-item .value')[0].textContent =
-            parseInt(dnu).toLocaleString();
+            parseInt(primaryDnu).toLocaleString();
         document.querySelectorAll('.summary-item .value')[1].textContent =
-            Math.round(firstVal).toLocaleString();
+            Math.round(primaryData[0]).toLocaleString();
         document.querySelectorAll('.summary-item .value')[2].textContent =
-            Math.round(lastVal).toLocaleString();
+            Math.round(primaryData[primaryData.length - 1]).toLocaleString();
     }
 
     // Tab Switching Logic

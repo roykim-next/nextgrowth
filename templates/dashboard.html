@@ -33,7 +33,7 @@
         <main class="main-content">
             <header class="page-header">
                 <h1>DAU Growth Projection</h1>
-                <p>DAU Prediction & Simulation based on Prophet Model</p>
+                <p>DAU Prediction & Simulation based on Shifted Power Law Model</p>
             </header>
 
             <section class="controls-section glass-panel">
@@ -46,13 +46,6 @@
                 <div id="dnu-channel-view" style="display: none;">
                     <div class="glass-panel">
                         <div class="form-row" style="margin-bottom: 2rem; padding: 0 1rem;">
-                            <div class="field-group" style="max-width: 300px;">
-                                <label class="required">App ID</label>
-                                <select class="input-premium" id="dnu-app-id">
-                                    <option>Market Lenz Global</option>
-                                    <option>IBKR</option>
-                                </select>
-                            </div>
                         </div>
                         <div class="table-container">
                             <table class="dnu-entry-table">
@@ -467,13 +460,14 @@
                             </div>
                         </div>
 
-                        <!-- Row 2: App, Country, OS -->
+                        <!-- Row 2: Model, Country, OS -->
                         <div class="form-row three-col">
                             <div class="field-group">
-                                <label class="required">App ID</label>
-                                <select class="input-premium">
-                                    <option>Market Lenz Global</option>
-                                    <option>IBKR</option>
+                                <label class="required">Model Type</label>
+                                <select class="input-premium" id="model-type">
+                                    <option value="both" selected>Compare (Both)</option>
+                                    <option value="base">Base</option>
+                                    <option value="aggressive">Aggressive</option>
                                 </select>
                             </div>
                             <div class="field-group">
@@ -558,7 +552,11 @@
                             </div>
                             <div class="field-group result-display">
                                 <label>Predicted DAU (End Date)</label>
-                                <div class="value-highlight">Calculating...</div>
+                                <div class="value-highlight" id="predicted-dau-base">-</div>
+                                <div class="predicted-dau-labels" style="display: flex; gap: 16px; margin-top: 4px; font-size: 0.75rem;">
+                                    <span style="color: #475569;">Base: <strong id="predicted-dau-base-label">-</strong></span>
+                                    <span style="color: #059669;">Aggr: <strong id="predicted-dau-aggr-label">-</strong></span>
+                                </div>
                             </div>
                         </div>
                     </div>
